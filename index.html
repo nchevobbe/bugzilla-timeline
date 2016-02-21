@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html >
+  <head>
+    <meta charset="UTF-8">
+    <title>Bugzilla Timeline</title>
+    <link rel="stylesheet" href="css/reset.css">
+    <link rel="stylesheet" href="css/style.css">
+  </head>
+  <body>
+    <header>
+      <h1>Bugzilla Timeline</h1>
+      <p>
+        <span class="email"></span>
+        <button type="button" class="edit-email" title="Edit">&nbsp;</button>
+      </p>
+    </header>
+
+    <section class="dashboard">
+      <nav>
+        <button id="esc" type="button">✕</button>
+        <button type="button" class="year-nav" data-direction="previous" data-year=""></button>
+        <h2 class="year"></h2>
+        <h2 class="bug-title"></h2>
+        <button type="button" class="year-nav" data-direction="next" data-year=""></button>
+      </nav>
+      <svg preserveAspectRatio="xMidYMin" viewBox="0 0 365 100">
+      </svg>
+    </section>
+
+    <section class="form hidden">
+      <form>
+        <label>
+          <span>Enter you Bugzilla account email</span>
+          <input type="email" name="email" placeholder="mozillarocks@mozilla.com" required>
+        </label>
+        <button>Show my timeline</button>
+      </form>
+    </section>
+
+    <footer>
+      <p>Created by <a href="https://twitter.com/nicolaschevobbe">Nicolas Chevobbe</a>. Heavily inspired by <a href="http://cushionapp.com/">Cushion</a></p>
+    </footer>
+
+    <script src="js/index.js"></script>
+  </body>
+</html>
