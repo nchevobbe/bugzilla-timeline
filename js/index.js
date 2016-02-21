@@ -57,8 +57,9 @@ function getEmail(){
       let splits = item.split("=");
       fieldMap[splits[0]] = splits[1];
     });
-
-    urlParamEmail = decodeURIComponent(fieldMap.email);
+    if(fieldMap.email){
+      urlParamEmail = decodeURIComponent(fieldMap.email);
+    }
   }
 
 
