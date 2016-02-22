@@ -142,37 +142,20 @@ function addListeners(){
 
         currentTarget = newTarget;
 
-        let left, top;
-        if(e.target.getScreenCTM){
-          let x, y;
-          if(e.target.getAttribute("x1")){
-            let x1 = parseFloat(e.target.getAttribute("x1"));
-            let x2 = parseFloat(e.target.getAttribute("x2"));
-            x = x1 + ((x2 - x1)/2);
-            y = parseFloat(e.target.getAttribute("y1")) + parseFloat(e.target.getAttribute("stroke-width")) + 2;
-          } else if(e.target.getAttribute("cx")) {
-            x = e.target.getAttribute("cx");
-            y = parseFloat(e.target.getAttribute("cy")) + parseFloat(e.target.getAttribute("r")) + 2;
-          } else if(e.target.getAttribute("x")) {
-            x = parseFloat(e.target.getAttribute("x"));
-            x = x + ( parseFloat(e.target.getAttribute("width")) / 2 );
-            y = parseFloat(e.target.getAttribute("y")) + parseFloat(e.target.getAttribute("height")) + 2;
-          }
-          let matrix = e.target.getScreenCTM().translate(x,y);
-          left = window.pageXOffset + matrix.e
-          top = window.pageYOffset + matrix.f;
-        } else {
-          left = e.clientX;
-          top = e.clientY;
-        }
+        tooltipEl.innerHTML = e.target.getAttribute('data-tooltip') || e.target.parentNode.getAttribute('data-tooltip');
 
-        left = left - (tooltipEl.clientWidth / 2);
+        let left = e.screenX - (tooltipEl.clientWidth / 2);
+        let top = e.clientY + (DETAIL_PADDING );
         if(left < 0){
           left = DETAIL_PADDING;
         } else if(left + tooltipEl.clientWidth > document.body.clientWidth){
           left = document.body.clientWidth - tooltipEl.clientWidth - DETAIL_PADDING;
         }
 
+        console.log('height', document.body.clientHeight, 'computed', top + tooltipEl.clientHeight);
+        if(top + tooltipEl.clientHeight > document.body.clientHeight){
+          top = e.clientY - tooltipEl.clientHeight - DETAIL_PADDING;
+        }
 
         tooltipEl.style.left = `${left}px`;
         tooltipEl.style.top = `${top}px`;
@@ -182,7 +165,6 @@ function addListeners(){
         if(e.target.getAttribute('fill')){
           tooltipEl.style.backgroundColor = e.target.getAttribute('fill');
         }
-        tooltipEl.innerHTML = e.target.getAttribute('data-tooltip') || e.target.parentNode.getAttribute('data-tooltip');
       }
     } else {
       currentTarget = null;
