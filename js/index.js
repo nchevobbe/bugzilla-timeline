@@ -91,141 +91,13 @@ function hideTooltip(){
 
 function addListeners(){
 
-  form.addEventListener("submit", function(e){
-    let data = new FormData(e.target);
-    let email = data.get('email')
-    if(email){
-      localStorage.setItem(LS_KEY_EMAIL, email);
-      history.pushState({}, 'Bugzilla Dashboard for ' + email, location.protocol + location.pathname + '?email=' + email);
-      onEmailChange(email);
-    }
-    e.preventDefault();
-  });
+  document.addEventListener('keydown', onKeyDown);
+  form.addEventListener("submit",onFormSubmit, false);
+  svg.addEventListener('click',onSvgClick, false);
+  svg.addEventListener('mousemove', onMouseMove, false);
 
   document.querySelector('.edit-email').addEventListener("click", setFormMode);
-
-  svg.addEventListener('click',function(e){
-    if(document.body.classList.contains('zoomed') === false){
-      if(
-        e.target.classList.contains('bug-line') ||
-        e.target.parentElement.classList.contains('bug-line')
-      ) {
-        var el = e.target;
-        if(!el.classList.contains('bug-line')){
-          el = e.target.parentElement;
-        }
-        if(e.ctrlKey || e.metaKey){
-          window.open("https://bugzilla.mozilla.org/show_bug.cgi?id=" + el.getAttribute("data-bug-id"));
-        } else {
-          zoomInBug(el);
-        }
-      }
-    }
-  }, false);
-
-  let currentTarget;
-  document.body.addEventListener('mousemove', function(e){
-    if(
-      e.target.getAttribute('data-tooltip') ||
-      (
-        e.target.parentNode.tagName === 'g' &&
-        e.target.parentNode.getAttribute('data-tooltip')
-      )
-    ){
-      let newTarget = e.target.getAttribute('data-tooltip')?e.target:e.target.parentNode;
-
-      if(currentTarget === null || currentTarget != newTarget){
-        if(tooltipHideId){
-          clearTimeout(tooltipHideId);
-          tooltipHideId = null;
-        }
-
-        currentTarget = newTarget;
-
-        tooltipEl.innerHTML = e.target.getAttribute('data-tooltip') || e.target.parentNode.getAttribute('data-tooltip');
-
-        let left = e.screenX - (tooltipEl.clientWidth / 2);
-        let top = e.clientY + (DETAIL_PADDING );
-        if(left < 0){
-          left = DETAIL_PADDING;
-        } else if(left + tooltipEl.clientWidth > document.body.clientWidth){
-          left = document.body.clientWidth - tooltipEl.clientWidth - DETAIL_PADDING;
-        }
-
-        console.log('height', document.body.clientHeight, 'computed', top + tooltipEl.clientHeight);
-        if(top + tooltipEl.clientHeight > document.body.clientHeight){
-          top = e.clientY - tooltipEl.clientHeight - DETAIL_PADDING;
-        }
-
-        tooltipEl.style.left = `${left}px`;
-        tooltipEl.style.top = `${top}px`;
-        if(e.target.getAttribute('stroke')){
-          tooltipEl.style.backgroundColor = e.target.getAttribute('stroke');
-        }
-        if(e.target.getAttribute('fill')){
-          tooltipEl.style.backgroundColor = e.target.getAttribute('fill');
-        }
-      }
-    } else {
-      currentTarget = null;
-      if(!tooltipHideId){
-        hideTooltip();
-      }
-    }
-  },false);
-
   document.getElementById('esc').addEventListener('click', zoomOut);
-  document.addEventListener('keydown', function(evt){
-
-    let formMode = isFormMode();
-    let zoomed = isZoomed();
-
-    if(evt.key === 'Escape' || evt.code === 'Escape'){
-      if(formMode && bugzillaEmail){
-        setDashboardMode();
-      }
-      if(zoomed) {
-        zoomOut();
-      }
-      return;
-    }
-
-    if(!formMode && !zoomed && (evt.key === 'ArrowRight' || evt.code === 'ArrowRight')){
-      if(currentYear !== (new Date()).getFullYear()){
-        setDashboardYear(currentYear + 1);
-        return;
-      }
-    }
-
-    if(!formMode && !zoomed && (evt.key === 'ArrowLeft' || evt.code === 'ArrowLeft')){
-      if(currentYear !== BUGZILLA_BIRTH_YEAR){
-       setDashboardYear(currentYear - 1);
-       return;
-      }
-    }
-
-    if(!formMode && !zoomed && (evt.key === 'ArrowDown' || evt.code === 'ArrowDown')){
-      if(isMoving){
-        return;
-      }
-      if(svg.viewBox.baseVal.y + svg.viewBox.baseVal.height < ((lanes.length - 1) * LINE_HEIGHT)){
-        panViewBox(svg.viewBox.baseVal.x, svg.viewBox.baseVal.y + svg.viewBox.baseVal.height);
-        navEl.classList.add('scrolled');
-      }
-    }
-
-    if(!formMode && !zoomed && (evt.key === 'ArrowUp' || evt.code === 'ArrowUp')){
-      if(isMoving){
-        return;
-      }
-      if(svg.viewBox.baseVal.y > 0){
-        panViewBox(svg.viewBox.baseVal.x, svg.viewBox.baseVal.y - svg.viewBox.baseVal.height);
-        if(svg.viewBox.baseVal.y - svg.viewBox.baseVal.height === 0){
-          navEl.classList.remove('scrolled');
-        }
-      }
-    }
-  });
 
   Array.from(document.querySelectorAll('.year-nav')).forEach(function(btn){
     btn.addEventListener("click", function(){
@@ -233,6 +105,137 @@ function addListeners(){
       setDashboardYear(newYear);
     })
   });
+}
+
+function onFormSubmit(e){
+  let data = new FormData(e.target);
+  let email = data.get('email')
+  if(email){
+    localStorage.setItem(LS_KEY_EMAIL, email);
+    history.pushState({}, 'Bugzilla Dashboard for ' + email, location.protocol + location.pathname + '?email=' + email);
+    onEmailChange(email);
+  }
+  e.preventDefault();
+}
+
+function onMouseMove(e){
+  if(
+    e.target.getAttribute('data-tooltip') ||
+    (
+      !isZoomed() &&
+      e.target.parentNode.tagName === 'g' &&
+      e.target.parentNode.getAttribute('data-tooltip')
+    )
+  ){
+    let newTarget = e.target.getAttribute('data-tooltip')?e.target:e.target.parentNode;
+
+    if(currentTooltipTarget === null || currentTooltipTarget != newTarget){
+      if(tooltipHideId){
+        clearTimeout(tooltipHideId);
+        tooltipHideId = null;
+      }
+
+      currentTooltipTarget = newTarget;
+
+      tooltipEl.innerHTML = e.target.getAttribute('data-tooltip') || e.target.parentNode.getAttribute('data-tooltip');
+
+      let left = e.clientX - (tooltipEl.clientWidth / 2);
+      let top = e.clientY + (DETAIL_PADDING * (isZoomed()?3:1));
+      if(left < 0){
+        left = DETAIL_PADDING;
+      } else if(left + tooltipEl.clientWidth > document.body.clientWidth){
+        left = document.body.clientWidth - tooltipEl.clientWidth - DETAIL_PADDING;
+      }
+
+      if(top + tooltipEl.clientHeight > document.body.clientHeight){
+        top = e.clientY - tooltipEl.clientHeight - DETAIL_PADDING;
+      }
+
+      tooltipEl.style.left = `${left}px`;
+      tooltipEl.style.top = `${top}px`;
+      if(e.target.getAttribute('stroke')){
+        tooltipEl.style.backgroundColor = e.target.getAttribute('stroke');
+      }
+      if(e.target.getAttribute('fill')){
+        tooltipEl.style.backgroundColor = e.target.getAttribute('fill');
+      }
+    }
+  } else {
+    currentTooltipTarget = null;
+    if(!tooltipHideId){
+      hideTooltip();
+    }
+  }
+}
+
+function onKeyDown(e){
+  let formMode = isFormMode();
+  let zoomed = isZoomed();
+
+  if(e.key === 'Escape' || e.code === 'Escape'){
+    if(formMode && bugzillaEmail){
+      setDashboardMode();
+    }
+    if(zoomed) {
+      zoomOut();
+    }
+    return;
+  }
+
+  if(!formMode && !zoomed && (e.key === 'ArrowRight' || e.code === 'ArrowRight')){
+    if(currentYear !== (new Date()).getFullYear()){
+      setDashboardYear(currentYear + 1);
+      return;
+    }
+  }
+
+  if(!formMode && !zoomed && (e.key === 'ArrowLeft' || e.code === 'ArrowLeft')){
+    if(currentYear !== BUGZILLA_BIRTH_YEAR){
+     setDashboardYear(currentYear - 1);
+     return;
+    }
+  }
+
+  if(!formMode && !zoomed && (e.key === 'ArrowDown' || e.code === 'ArrowDown')){
+    if(isMoving){
+      return;
+    }
+    if(svg.viewBox.baseVal.y + svg.viewBox.baseVal.height < ((lanes.length - 1) * LINE_HEIGHT)){
+      panViewBox(svg.viewBox.baseVal.x, svg.viewBox.baseVal.y + svg.viewBox.baseVal.height);
+      navEl.classList.add('scrolled');
+    }
+  }
+
+  if(!formMode && !zoomed && (e.key === 'ArrowUp' || e.code === 'ArrowUp')){
+    if(isMoving){
+      return;
+    }
+    if(svg.viewBox.baseVal.y > 0){
+      panViewBox(svg.viewBox.baseVal.x, svg.viewBox.baseVal.y - svg.viewBox.baseVal.height);
+      if(svg.viewBox.baseVal.y - svg.viewBox.baseVal.height === 0){
+        navEl.classList.remove('scrolled');
+      }
+    }
+  }
+}
+
+function onSvgClick(e){
+  if(!isZoomed()){
+    if(
+      e.target.classList.contains('bug-line') ||
+      e.target.parentElement.classList.contains('bug-line')
+    ) {
+      var el = e.target;
+      if(!el.classList.contains('bug-line')){
+        el = e.target.parentElement;
+      }
+      if(e.ctrlKey || e.metaKey){
+        window.open("https://bugzilla.mozilla.org/show_bug.cgi?id=" + el.getAttribute("data-bug-id"));
+      } else {
+        zoomInBug(el);
+      }
+    }
+  }
 }
 
 function setDashboardYear(year, reset){
@@ -1001,6 +1004,7 @@ let dashboardSection = document.querySelector('section.dashboard');
 let bugTitleEl = document.querySelector('.bug-title');
 let navEl = document.querySelector('nav');
 
+let currentTooltipTarget;
 let tooltipEl = document.createElement("div");
 tooltipEl.classList.add("tooltip");
 document.body.appendChild(tooltipEl);
