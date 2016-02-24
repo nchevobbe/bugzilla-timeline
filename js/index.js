@@ -612,17 +612,7 @@ function zoomInBug(el){
 }
 
 function drawBugDetail(el, bugData){
-  var assignDate = null;
-  bugData.history.some(function(activity){
-    var hasAssignement = activity.changes.some(function(change){
-      return (change.field_name === 'assigned_to' && change.added === bugzillaEmail);
-    });
-    if(hasAssignement === true){
-      assignDate = new Date(activity.when);
-      return true;
-    }
-  });
-  bugData.assign_time = assignDate.getTime();
+  var assignDate = new Date(bugData.assign_time);
 
   var endDate = new Date();
   if(bugData.cf_last_resolved){
@@ -774,10 +764,7 @@ function drawBugDetail(el, bugData){
 
   el.appendChild(bugGroup);
 
-  let daysOfAssignement = (endDate.getTime() - bugData.assign_time ) / MILLISECOND_A_DAY;
-
-  let startDate = new Date(bugData.assign_time);
-
+  let daysOfAssignement = (endDate.getTime() - assignDate.getTime() ) / MILLISECOND_A_DAY;
 
   let yearHorizontalLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
   yearHorizontalLine.setAttribute('x1', svg.viewBox.baseVal.x);
@@ -811,7 +798,7 @@ function drawBugDetail(el, bugData){
     bugGroup.insertBefore(dayHorizontalLine,bugGroup.firstChild);
 
     for(var i = 0; i <= daysOfAssignement + 2 ; i++){
-      var day = new Date(bugData.assign_time + ( i * MILLISECOND_A_DAY));
+      var day = new Date(assignDate.getTime() + ( i * MILLISECOND_A_DAY));
       day.setHours(0,0,0);
       var dayLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
       var pos = getPositionFromDate(day,bugPeriod);
@@ -847,12 +834,12 @@ function drawBugDetail(el, bugData){
     }
   }
 
-  let monthsAssigned = Math.ceil((endDate.getTime() - bugData.assign_time ) / MILLISECOND_A_DAY / 30);
+  let monthsAssigned = Math.ceil((endDate.getTime() - assignDate.getTime() ) / MILLISECOND_A_DAY / 30);
   let months = ['January','February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   if(monthsAssigned < 36){
-    let firstDayOfMonth = new Date(startDate.getFullYear(),startDate.getMonth(),1);
-    for(var i = 0; i <= Math.ceil((endDate.getTime() - bugData.assign_time ) / MILLISECOND_A_DAY / 30) ; i++){
-      var day = new Date(bugData.assign_time + ( i * MILLISECOND_A_DAY));
+    let firstDayOfMonth = new Date(assignDate.getFullYear(),assignDate.getMonth(),1);
+    for(var i = 0; i <= Math.ceil((endDate.getTime() - assignDate.getTime() ) / MILLISECOND_A_DAY / 30) ; i++){
+      var day = new Date(assignDate.getTime() + ( i * MILLISECOND_A_DAY));
       firstDayOfMonth.setHours(0,0,0);
       var monthLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
       var pos = getPositionFromDate(firstDayOfMonth,bugPeriod);
@@ -891,7 +878,7 @@ function drawBugDetail(el, bugData){
     }
   }
 
-  let startYear = startDate.getFullYear();
+  let startYear = assignDate.getFullYear();
   let endYear = endDate.getFullYear();
   for(var i = 0; i <= endYear - startYear; i++){
     let firstDayOfYear = new Date(startYear + i, 0, 1);
