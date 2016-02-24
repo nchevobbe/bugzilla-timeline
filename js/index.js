@@ -338,7 +338,7 @@ function setBugs(year){
   document.querySelector('nav').classList.add('loading');
   let firstMonday = getMondayOfFirstWeek(year);
   var params = {
-    "include_fields": "id,summary,status,cf_last_resolved,target_milestone,creation_time,resolution",
+    "include_fields": "id,summary,status,cf_last_resolved,target_milestone,creation_time,resolution,assigned_to",
     "email1": bugzillaEmail,
     "emailassigned_to1":1
   };
@@ -435,6 +435,10 @@ function getBugHistory(bugData){
         return true;
       }
     });
+    if(!bugData.assign_time && bugData.assigned_to != ''){
+      bugData.assign_time = bugData.creation_time;
+    }
+
     return data.bugs[0].history;
   }).catch((e) => console.error(e));
 }
