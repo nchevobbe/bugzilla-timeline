@@ -337,8 +337,20 @@ function getMondayOfFirstWeek(year){
 function setBugs(year){
   document.querySelector('nav').classList.add('loading');
   let firstMonday = getMondayOfFirstWeek(year);
+
+  let fields = [
+    "id",
+    "summary",
+    "status",
+    "cf_last_resolved",
+    "target_milestone",
+    "creation_time",
+    "resolution",
+    "assigned_to",
+    "creator"
+  ];
   var params = {
-    "include_fields": "id,summary,status,cf_last_resolved,target_milestone,creation_time,resolution,assigned_to",
+    "include_fields": fields.join(","),
     "email1": bugzillaEmail,
     "emailassigned_to1":1
   };
@@ -398,6 +410,39 @@ function setBugs(year){
       if(!bugExists){
         var historyPromise = getBugHistory(bug).then(function(history){
           bug.history = history;
+
+          // A bug is being worked on by the user when :
+          // - creates the bug
+          // - changes the bug
+          // - is cc'ed on the bug
+          // - is assigned on the bug
+          bug.history.some(function(activity){
+
+            var hasAssignement = (activity.who === bugzillaEmail)
+            if(!hasAssignement){
+              activity.changes.some(function(change){
+                return (
+                  (
+                    change.field_name === 'cc' ||
+                    change.field_name === 'assigned_to'
+                  ) && change.added === bugzillaEmail
+                );
+              });
+            }
+
+            if(hasAssignement === true){
+              bug.startDate = new Date(activity.when);
+              return true;
+            }
+          });
+
+
+          if(bug.cf_last_resolved){
+            bug.endDate = new Date(bug.cf_last_resolved);
+          } else {
+            bug.endDate = new Date();
+          }
+
           bugs.push(bug);
           drawBug(bug);
           return bug
@@ -426,21 +471,20 @@ function getBugHistory(bugData){
   })
   .then((response) => response.json())
   .then(function(data){
-    data.bugs[0].history.some(function(activity){
-      var hasAssignement = activity.changes.some(function(change){
-        return (change.field_name === 'assigned_to' && change.added === bugzillaEmail);
-      });
-      if(hasAssignement === true){
-        bugData.assign_time = activity.when;
-        return true;
-      }
+    let history = data.bugs[0].history;
+    history.unshift({
+      who: bugData.creator,
+      when: bugData.creation_time,
+      changes: [{
+        field_name: 'Creation',
+        removed: '',
+        added: ''
+      }]
     });
-    if(!bugData.assign_time && bugData.assigned_to != ''){
-      bugData.assign_time = bugData.creation_time;
-    }
-
-    return data.bugs[0].history;
-  }).catch((e) => console.error(e));
+    return history;
+  }).catch(function(ex){
+    console.log(bugData.id, ex);
+  });
 }
 
 function getPositionFromDate(date, period){
@@ -448,13 +492,22 @@ function getPositionFromDate(date, period){
       let start = period[0];
       let end = period[1];
       let length = (end - start);
-      let percent = (date - start)/length;
+      if(length === 0){
+        let percent = (date - start)/length;
 
-      let periodStart = svg.viewBox.baseVal.x + DETAIL_PADDING;
-      let periodEnd = svg.viewBox.baseVal.x + YEAR_WIDTH - DETAIL_PADDING;
-      let periodLength = periodEnd - periodStart;
+        let periodStart = svg.viewBox.baseVal.x + DETAIL_PADDING;
+        let periodEnd = svg.viewBox.baseVal.x + YEAR_WIDTH - DETAIL_PADDING;
 
-      return periodStart + ( periodLength  * percent );
+        return periodEnd + ( end - date );
+      } else {
+        let percent = (date - start)/length;
+
+        let periodStart = svg.viewBox.baseVal.x + DETAIL_PADDING;
+        let periodEnd = svg.viewBox.baseVal.x + YEAR_WIDTH - DETAIL_PADDING;
+        let periodLength = periodEnd - periodStart;
+
+        return periodStart + ( periodLength  * percent );
+      }
     }
 
     return (date - getMondayOfFirstWeek(BUGZILLA_BIRTH_YEAR))/MILLISECOND_A_DAY;
@@ -480,17 +533,12 @@ function findLane(start, end){
 }
 
 function drawBug(bug){
-  if(bug.assign_time ){
+  if(bug.startDate){
     var colorIndex = (bug.id % (COLORS.length - 1));
     var bugColor = COLORS[colorIndex];
 
-    var endDate = new Date();
-    if(bug.cf_last_resolved){
-      endDate = new Date(bug.cf_last_resolved);
-    }
-
-    var startPoint = getPositionFromDate(new Date(bug.assign_time));
-    var endPoint = getPositionFromDate(endDate);
+    var startPoint = getPositionFromDate(bug.startDate);
+    var endPoint = getPositionFromDate(bug.endDate);
     var laneNumber = findLane(startPoint,endPoint);
 
     if(!lanes[laneNumber]){
@@ -612,21 +660,15 @@ function zoomInBug(el){
 }
 
 function drawBugDetail(el, bugData){
-  var assignDate = new Date(bugData.assign_time);
-
-  var endDate = new Date();
-  if(bugData.cf_last_resolved){
-    endDate = (new Date(bugData.cf_last_resolved));
-  }
-  var bugPeriod = [assignDate, endDate];
+  let bugPeriod = [bugData.startDate, bugData.endDate];
   let y = svg.viewBox.baseVal.y + 60;
 
-  var bugGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  let bugGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
   bugGroup.classList.add('detail-bug-line');
 
-  if(bugData.cf_last_resolved){
-    var endCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    endCircle.setAttribute('cx',getPositionFromDate(endDate,bugPeriod));
+  if(bugData.endDate && bugData.resolution == 'FIXED'){
+    let endCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    endCircle.setAttribute('cx',getPositionFromDate(bugData.endDate,bugPeriod));
     endCircle.setAttribute('cy', y);
     endCircle.setAttribute('r', 9);
     endCircle.setAttribute('fill', 'rgba(0,0,0,0.3)');
@@ -634,18 +676,18 @@ function drawBugDetail(el, bugData){
     bugGroup.appendChild(endCircle);
   }
 
-  var bugLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  let bugLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
   bugLine.setAttribute('x1', getPositionFromDate(new Date(bugData.creation_time),bugPeriod));
   bugLine.setAttribute('y1', y);
-  bugLine.setAttribute('x2', getPositionFromDate(endDate,bugPeriod));
+  bugLine.setAttribute('x2', getPositionFromDate(bugData.endDate,bugPeriod));
   bugLine.setAttribute('y2', y);
   bugLine.setAttribute('stroke', 'rgba(0,0,0,1)');
   bugLine.setAttribute('stroke-width', 2);
   bugLine.setAttribute('stroke-linecap', 'round');
   bugGroup.appendChild(bugLine);
 
-  var groups = [];
-  var historyEntries = [];
+  let groups = [];
+  let historyEntries = [];
   bugData.history.forEach(function(entry){
     if(! userColor[entry.who]){
       if(USERS_COLORS.length === 0){
@@ -764,7 +806,7 @@ function drawBugDetail(el, bugData){
 
   el.appendChild(bugGroup);
 
-  let daysOfAssignement = (endDate.getTime() - assignDate.getTime() ) / MILLISECOND_A_DAY;
+  let daysOfAssignement = (bugData.endDate.getTime() - bugData.startDate.getTime() ) / MILLISECOND_A_DAY;
 
   let yearHorizontalLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
   yearHorizontalLine.setAttribute('x1', svg.viewBox.baseVal.x);
@@ -798,7 +840,7 @@ function drawBugDetail(el, bugData){
     bugGroup.insertBefore(dayHorizontalLine,bugGroup.firstChild);
 
     for(var i = 0; i <= daysOfAssignement + 2 ; i++){
-      var day = new Date(assignDate.getTime() + ( i * MILLISECOND_A_DAY));
+      var day = new Date(bugData.startDate.getTime() + ( i * MILLISECOND_A_DAY));
       day.setHours(0,0,0);
       var dayLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
       var pos = getPositionFromDate(day,bugPeriod);
@@ -834,12 +876,12 @@ function drawBugDetail(el, bugData){
     }
   }
 
-  let monthsAssigned = Math.ceil((endDate.getTime() - assignDate.getTime() ) / MILLISECOND_A_DAY / 30);
+  let monthsAssigned = Math.ceil((bugData.endDate.getTime() - bugData.startDate.getTime() ) / MILLISECOND_A_DAY / 30);
   let months = ['January','February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   if(monthsAssigned < 36){
-    let firstDayOfMonth = new Date(assignDate.getFullYear(),assignDate.getMonth(),1);
-    for(var i = 0; i <= Math.ceil((endDate.getTime() - assignDate.getTime() ) / MILLISECOND_A_DAY / 30) ; i++){
-      var day = new Date(assignDate.getTime() + ( i * MILLISECOND_A_DAY));
+    let firstDayOfMonth = new Date(bugData.startDate.getFullYear(),bugData.startDate.getMonth(),1);
+    for(var i = 0; i <= Math.ceil((bugData.endDate.getTime() - bugData.startDate.getTime() ) / MILLISECOND_A_DAY / 30) ; i++){
+      var day = new Date(bugData.startDate.getTime() + ( i * MILLISECOND_A_DAY));
       firstDayOfMonth.setHours(0,0,0);
       var monthLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
       var pos = getPositionFromDate(firstDayOfMonth,bugPeriod);
@@ -878,8 +920,8 @@ function drawBugDetail(el, bugData){
     }
   }
 
-  let startYear = assignDate.getFullYear();
-  let endYear = endDate.getFullYear();
+  let startYear = bugData.startDate.getFullYear();
+  let endYear = bugData.endDate.getFullYear();
   for(var i = 0; i <= endYear - startYear; i++){
     let firstDayOfYear = new Date(startYear + i, 0, 1);
     firstDayOfYear.setHours(0,0,0);
