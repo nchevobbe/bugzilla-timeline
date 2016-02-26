@@ -436,6 +436,10 @@ function setBugs(year){
             }
           });
 
+          if(!bug.startDate && bug.assigned_to === bugzillaEmail){
+            bug.startDate = new Date(bug.creation_time);
+          }
+
 
           if(bug.cf_last_resolved){
             bug.endDate = new Date(bug.cf_last_resolved);
