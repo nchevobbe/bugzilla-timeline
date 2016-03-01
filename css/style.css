@@ -232,7 +232,8 @@ svg {
 }
 
 .zoomed nav .year,
-.zoomed .year-nav {
+.zoomed .year-nav,
+.zoomed .months {
   display: none;
 }
 .zoomed .bug-line:not(.detail){
