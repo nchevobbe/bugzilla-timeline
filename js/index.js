@@ -329,12 +329,6 @@ function updateDashboardNavigation(year){
 
 }
 
-function getMondayOfFirstWeek(year){
-  // First week of the year is the week where is January 4th
-  let currentYearJan4 = new Date(`${year}-01-04`);
-  return new Date(currentYearJan4.getTime() - ((currentYearJan4.getDay() - MONDAY_INDEX) * MILLISECOND_A_DAY));
-}
-
 function setBugs(year){
   document.querySelector('nav').classList.add('loading');
   let firstMonday = getMondayOfFirstWeek(year);
@@ -492,6 +486,12 @@ function getBugHistory(bugData){
   });
 }
 
+function getMondayOfFirstWeek(year){
+  // First week of the year is the week where is January 4th
+  let currentYearJan4 = new Date(`${year}-01-04`);
+  return new Date(currentYearJan4.getTime() - ((currentYearJan4.getDay() - MONDAY_INDEX) * MILLISECOND_A_DAY));
+}
+
 function getPositionFromDate(date, period){
     if(period){
       let start = period[0];
@@ -537,6 +537,14 @@ function findLane(start, end){
   return lane;
 }
 
+function createSVGElement(tagName, attributes){
+  let el = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+  for(let key in attributes){
+    el.setAttribute(key, attributes[key])
+  }
+  return el;
+}
+
 function drawBug(bug){
   if(bug.startDate){
     var colorIndex = (bug.id % (COLORS.length - 1));
@@ -550,7 +558,7 @@ function drawBug(bug){
       lanes[laneNumber] = [];
     }
     lanes[laneNumber].push([startPoint,endPoint]);
-    var y = (LINE_HEIGHT * 2) + (laneNumber * LINE_HEIGHT);
+    var y = (LINE_HEIGHT) + (laneNumber * LINE_HEIGHT);
     var bugGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
     bugGroup.classList.add('bug-line');
     bugGroup.setAttribute('data-bug-id', bug.id);
@@ -602,37 +610,45 @@ function drawWeeks(year){
 
 function drawMonths(year){
 
-  let monthGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  let monthGroup = createSVGElement("g");
   monthGroup.classList.add('months');
-  let monthRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  monthRect.setAttribute("x", getPositionFromDate(new Date(year,0,1,0,0,0)));
-  monthRect.setAttribute("y",0);
-  monthRect.setAttribute("width", YEAR_WIDTH);
-  monthRect.setAttribute("height", LINE_HEIGHT);
-  monthRect.setAttribute("fill", '#FFC107');
-  //monthGroup.appendChild(monthRect);
+
+  let monthWidth = 5;
+
   for(var i = 0; i < 12; i++){
     let firstDay = new Date(year, i, 1,0,0,0);
-    let monthLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
     let x = getPositionFromDate(firstDay);
-    monthLine.setAttribute('x1', x);
-    monthLine.setAttribute('y1', 0);
-    monthLine.setAttribute('x2', x);
-    monthLine.setAttribute('y2', 10000);
-    monthLine.setAttribute('stroke', '#FFC107');
-    monthLine.setAttribute('stroke-width', 0.5);
+    let monthLine = createSVGElement("line", {
+      "x1": x,
+      "y1": 0,
+      "x2": x,
+      "y2": 10000,
+      "stroke": "#FFC107",
+      "stroke-width": 0.5
+    });
 
-    let monthText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    monthText.innerHTML = MONTHS[i];
-    monthText.setAttribute('x', x + (YEAR_WIDTH / 12 / 2));
-    monthText.setAttribute('y', 5 );
-    monthText.setAttribute('font-size',5);
-    monthText.setAttribute('font-family','Signika');
-    monthText.setAttribute('text-anchor', 'middle');
-    monthText.setAttribute('fill', '#222');
+    let monthText = createSVGElement("text", {
+      "x": (x + monthWidth/2),
+      "y": (monthWidth - 1) ,
+      "font-size": 4,
+      "font-family": "Signika",
+      "fill": "rgba(0,0,0,0.5)",
+      "text-anchor": "middle",
+      "title": MONTHS[i]
+    });
+    monthText.innerHTML = MONTHS[i][0];
 
+    let monthRect =  createSVGElement("rect", {
+      "x" : x,
+      "y" : 0,
+      "width" : monthWidth,
+      "height" : monthWidth,
+      "fill" : "#FFC107"
+    });
+
+    monthGroup.appendChild(monthRect);
     monthGroup.appendChild(monthLine);
-    //monthGroup.appendChild(monthText);
+    monthGroup.appendChild(monthText);
   }
 
   svg.insertBefore(monthGroup,svg.firstChild);
