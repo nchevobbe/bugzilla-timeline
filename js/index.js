@@ -258,7 +258,8 @@ function setDashboardYear(year, reset){
 
   if(displayedYears.indexOf(year) === -1){
     displayedYears.push(year);
-    drawWeeks(year)
+    drawMonths(year);
+    drawWeeks(year);
     setBugs(year).catch((ex) => console.error(ex));
   }
 };
@@ -326,12 +327,6 @@ function updateDashboardNavigation(year){
     previousYearButton.removeAttribute('title');
   }
 
-}
-
-function getMondayOfFirstWeek(year){
-  // First week of the year is the week where is January 4th
-  let currentYearJan4 = new Date(`${year}-01-04`);
-  return new Date(currentYearJan4.getTime() - ((currentYearJan4.getDay() - MONDAY_INDEX) * MILLISECOND_A_DAY));
 }
 
 function setBugs(year){
@@ -491,6 +486,12 @@ function getBugHistory(bugData){
   });
 }
 
+function getMondayOfFirstWeek(year){
+  // First week of the year is the week where is January 4th
+  let currentYearJan4 = new Date(`${year}-01-04`);
+  return new Date(currentYearJan4.getTime() - ((currentYearJan4.getDay() - MONDAY_INDEX) * MILLISECOND_A_DAY));
+}
+
 function getPositionFromDate(date, period){
     if(period){
       let start = period[0];
@@ -536,6 +537,14 @@ function findLane(start, end){
   return lane;
 }
 
+function createSVGElement(tagName, attributes){
+  let el = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+  for(let key in attributes){
+    el.setAttribute(key, attributes[key])
+  }
+  return el;
+}
+
 function drawBug(bug){
   if(bug.startDate){
     var colorIndex = (bug.id % (COLORS.length - 1));
@@ -549,7 +558,7 @@ function drawBug(bug){
       lanes[laneNumber] = [];
     }
     lanes[laneNumber].push([startPoint,endPoint]);
-    var y = LINE_HEIGHT + (laneNumber * LINE_HEIGHT);
+    var y = (LINE_HEIGHT) + (laneNumber * LINE_HEIGHT);
     var bugGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
     bugGroup.classList.add('bug-line');
     bugGroup.setAttribute('data-bug-id', bug.id);
@@ -579,10 +588,10 @@ function drawBug(bug){
   }
 }
 
-function drawWeeks(){
+function drawWeeks(year){
 
   let weekGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  let firstDay = getMondayOfFirstWeek(currentYear);
+  let firstDay = getMondayOfFirstWeek(year);
   weekGroup.classList.add('weeks');
   for(var i = 0; i <= 52; i++){
     let monday = new Date(firstDay.getTime() + (i * 7 * MILLISECOND_A_DAY));
@@ -597,6 +606,52 @@ function drawWeeks(){
     weekGroup.appendChild(weekLine);
   }
   svg.insertBefore(weekGroup,svg.firstChild);
+}
+
+function drawMonths(year){
+
+  let monthGroup = createSVGElement("g");
+  monthGroup.classList.add('months');
+
+  let monthWidth = 5;
+
+  for(var i = 0; i < 12; i++){
+    let firstDay = new Date(year, i, 1,0,0,0);
+    let x = getPositionFromDate(firstDay);
+    let monthLine = createSVGElement("line", {
+      "x1": x,
+      "y1": 0,
+      "x2": x,
+      "y2": 10000,
+      "stroke": "#FFC107",
+      "stroke-width": 0.5
+    });
+
+    let monthText = createSVGElement("text", {
+      "x": (x + monthWidth/2),
+      "y": (monthWidth - 1) ,
+      "font-size": 4,
+      "font-family": "Signika",
+      "fill": "rgba(0,0,0,0.5)",
+      "text-anchor": "middle",
+      "title": MONTHS[i]
+    });
+    monthText.innerHTML = MONTHS[i][0];
+
+    let monthRect =  createSVGElement("rect", {
+      "x" : x,
+      "y" : 0,
+      "width" : monthWidth,
+      "height" : monthWidth,
+      "fill" : "#FFC107"
+    });
+
+    monthGroup.appendChild(monthRect);
+    monthGroup.appendChild(monthLine);
+    monthGroup.appendChild(monthText);
+  }
+
+  svg.insertBefore(monthGroup,svg.firstChild);
 }
 
 function zoomInBug(el){
@@ -881,7 +936,6 @@ function drawBugDetail(el, bugData){
   }
 
   let monthsAssigned = Math.ceil((bugData.endDate.getTime() - bugData.startDate.getTime() ) / MILLISECOND_A_DAY / 30);
-  let months = ['January','February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   if(monthsAssigned < 36){
     let firstDayOfMonth = new Date(bugData.startDate.getFullYear(),bugData.startDate.getMonth(),1);
     for(var i = 0; i <= Math.ceil((bugData.endDate.getTime() - bugData.startDate.getTime() ) / MILLISECOND_A_DAY / 30) ; i++){
@@ -902,7 +956,7 @@ function drawBugDetail(el, bugData){
 
       let monthNumber = firstDayOfMonth.getMonth();
       if(monthsAssigned < 9){
-        monthText.textContent = months[monthNumber];
+        monthText.textContent = MONTHS[monthNumber];
       } else {
         monthText.textContent = (monthNumber < 9?"0":"") + (monthNumber + 1);
       }
@@ -1017,6 +1071,7 @@ const DETAIL_PADDING = 15;
 const MONDAY_INDEX = 1;
 const MILLISECOND_A_DAY = (1000*60*60*24);
 const BUGZILLA_BIRTH_YEAR = 1998;
+const MONTHS = ['January','February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const BUGZILLA_API_URL = 'https://bugzilla.mozilla.org/rest/';
 const COLORS = ["rgb(244, 67, 54)","rgb(0, 150, 136)","rgb(96, 125, 139)","rgb(156, 39, 176)","rgb(103, 58, 183)","rgb(63, 81, 181)","rgb(33, 150, 243)","rgb(3, 169, 244)","rgb(0, 188, 212)","rgb(76, 175, 80)","rgb(139, 195, 74)","rgb(255, 193, 7)","rgb(255, 152, 0)","rgb(255, 87, 34)","rgb(233, 30, 99)","rgb(121, 85, 72)"];
 var USERS_COLORS = COLORS.map((x) => x);
