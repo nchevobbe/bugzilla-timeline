@@ -410,13 +410,16 @@ function setBugs(year){
       return a.creation_time < b.creation_time ? -1 : 1;
     });
 
-
-    data.bugs.forEach(function(bug){
+    return data.bugs.reduce(function(previousBugPromise, bug, idx){
       var bugExists = bugs.some(function(item){
-      return (item.id == bug.id);
+        return (item.id == bug.id);
       });
 
-      if(!bugExists){
+      if(bugExists){
+        return Promise.resolve();
+      }
+
+      return new Promise(function(resolve, reject){
         var historyPromise = getBugHistory(bug).then(function(history){
           bug.history = history;
 
@@ -456,15 +459,19 @@ function setBugs(year){
             bug.endDate = new Date();
           }
 
+          return Promise.resolve(bug);
+        });
+
+        var promises = [historyPromise,previousBugPromise];
+        Promise.all(promises).then(function(data){
+          var bug = data[promises.indexOf(historyPromise)];
           bugs.push(bug);
           drawBug(bug);
-          return bug
-        });
-        promises.push(historyPromise);
-      }
-    });
 
-    return Promise.all(promises);
+          resolve();
+        });
+      });
+    }, Promise.resolve());
   })
   .then(function(){
     document.querySelector('nav').classList.remove('loading');
