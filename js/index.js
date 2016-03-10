@@ -258,7 +258,8 @@ function setDashboardYear(year, reset){
 
   if(displayedYears.indexOf(year) === -1){
     displayedYears.push(year);
-    drawWeeks(year)
+    drawMonths(year);
+    drawWeeks(year);
     setBugs(year).catch((ex) => console.error(ex));
   }
 };
@@ -328,12 +329,6 @@ function updateDashboardNavigation(year){
 
 }
 
-function getMondayOfFirstWeek(year){
-  // First week of the year is the week where is January 4th
-  let currentYearJan4 = new Date(`${year}-01-04`);
-  return new Date(currentYearJan4.getTime() - ((currentYearJan4.getDay() - MONDAY_INDEX) * MILLISECOND_A_DAY));
-}
-
 function setBugs(year){
   document.querySelector('nav').classList.add('loading');
   let firstMonday = getMondayOfFirstWeek(year);
@@ -347,7 +342,8 @@ function setBugs(year){
     "creation_time",
     "resolution",
     "assigned_to",
-    "creator"
+    "creator",
+    "priority"
   ];
   var params = {
     "include_fields": fields.join(","),
@@ -387,27 +383,43 @@ function setBugs(year){
     data.bugs = data.bugs.filter((x) => !x.cf_last_resolved || new Date(x.cf_last_resolved) >= firstMonday);
 
     data.bugs.sort(function(a, b){
-      if(a.cf_last_resolved || b.cf_last_resolved){
-        if(!a.cf_last_resolved){
-          return 1;
-        }
-
-        if(!b.cf_last_resolved){
+      // If bugs have not the same state
+      if(a.cf_last_resolved != b.cf_last_resolved){
+        // If "a" is not resolved, a comes first
+        if(a.cf_last_resolved == null){
           return -1;
         }
 
-        return a.cf_last_resolved < b.cf_last_resolved ? -1 : 1;
+        // If "b" is not resolved, b comes first
+        if(b.cf_last_resolved == null){
+          return 1;
+        }
       }
 
-      return a.creation_time < b.creation_time ? -1 : 1;
+      var priorityA = (PRIORITY_REGEX.test(a.priority)?a.priority:'P3');
+      var priorityB = (PRIORITY_REGEX.test(b.priority)?b.priority:'P3');
+      // "a" and "b" are in the same state ( both resolved, or both unresolved)
+      // we want to get the higher priority bugs first
+      if(priorityA != priorityB){
+        return priorityA < priorityB ? -1:1;
+      }
 
+      // "a" and "b" are in the same state ( both resolved, or both unresolved)
+      // and have the same priority
+      // we want to get the older bugs first
+      return a.creation_time < b.creation_time ? -1 : 1;
     });
-    data.bugs.forEach(function(bug){
+
+    return data.bugs.reduce(function(previousBugPromise, bug, idx){
       var bugExists = bugs.some(function(item){
-      return (item.id == bug.id);
+        return (item.id == bug.id);
       });
 
-      if(!bugExists){
+      if(bugExists){
+        return Promise.resolve();
+      }
+
+      return new Promise(function(resolve, reject){
         var historyPromise = getBugHistory(bug).then(function(history){
           bug.history = history;
 
@@ -418,7 +430,7 @@ function setBugs(year){
           // - is assigned on the bug
           bug.history.some(function(activity){
 
-            var hasAssignement = (activity.who === bugzillaEmail)
+            var hasAssignement = (activity.who === bugzillaEmail);
             if(!hasAssignement){
               activity.changes.some(function(change){
                 return (
@@ -447,15 +459,19 @@ function setBugs(year){
             bug.endDate = new Date();
           }
 
+          return Promise.resolve(bug);
+        });
+
+        var promises = [historyPromise,previousBugPromise];
+        Promise.all(promises).then(function(data){
+          var bug = data[promises.indexOf(historyPromise)];
           bugs.push(bug);
           drawBug(bug);
-          return bug
-        });
-        promises.push(historyPromise);
-      }
-    });
 
-    return Promise.all(promises);
+          resolve();
+        });
+      });
+    }, Promise.resolve());
   })
   .then(function(){
     document.querySelector('nav').classList.remove('loading');
@@ -489,6 +505,12 @@ function getBugHistory(bugData){
   }).catch(function(ex){
     console.log(bugData.id, ex);
   });
+}
+
+function getMondayOfFirstWeek(year){
+  // First week of the year is the week where is January 4th
+  let currentYearJan4 = new Date(`${year}-01-04`);
+  return new Date(currentYearJan4.getTime() - ((currentYearJan4.getDay() - MONDAY_INDEX) * MILLISECOND_A_DAY));
 }
 
 function getPositionFromDate(date, period){
@@ -536,8 +558,27 @@ function findLane(start, end){
   return lane;
 }
 
+function createSVGElement(tagName, attributes){
+  let el = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+  for(let key in attributes){
+    el.setAttribute(key, attributes[key])
+  }
+  return el;
+}
+
 function drawBug(bug){
   if(bug.startDate){
+    var strokeWidth = 2;
+    var endCircleR = 1.75;
+    var minMultiplier = 0.25;
+    var maxMultiplier = 1.75;
+
+    if(PRIORITY_REGEX.test(bug.priority)){
+      var priorityRatio = minMultiplier + ((((-1.25/5) * bug.priority[1]) + 1.25) * (maxMultiplier - minMultiplier));
+      strokeWidth = strokeWidth * priorityRatio;
+      endCircleR = endCircleR * priorityRatio;
+    }
+
     var colorIndex = (bug.id % (COLORS.length - 1));
     var bugColor = COLORS[colorIndex];
 
@@ -549,18 +590,18 @@ function drawBug(bug){
       lanes[laneNumber] = [];
     }
     lanes[laneNumber].push([startPoint,endPoint]);
-    var y = LINE_HEIGHT + (laneNumber * LINE_HEIGHT);
+    var y = (LINE_HEIGHT * 1.5) + (laneNumber * LINE_HEIGHT);
     var bugGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
     bugGroup.classList.add('bug-line');
     bugGroup.setAttribute('data-bug-id', bug.id);
-    bugGroup.setAttribute('data-tooltip', `Bug ${bug.id}<hr>${bug.summary}`);
+    bugGroup.setAttribute('data-tooltip', `Bug ${bug.id}${PRIORITY_REGEX.test(bug.priority)?" [" + bug.priority + "]":""}<hr>${bug.summary}`);
 
     if(bug.cf_last_resolved && bug.resolution == 'FIXED'){
       var endCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       endCircle.classList.add('resolved');
       endCircle.setAttribute('cx', endPoint);
       endCircle.setAttribute('cy', y);
-      endCircle.setAttribute('r', 2);
+      endCircle.setAttribute('r', endCircleR);
       endCircle.setAttribute('fill', bugColor);
       bugGroup.appendChild(endCircle);
     }
@@ -571,7 +612,8 @@ function drawBug(bug){
     bugAssignedLine.setAttribute('x2', endPoint);
     bugAssignedLine.setAttribute('y2', y);
     bugAssignedLine.setAttribute('stroke', bugColor);
-    bugAssignedLine.setAttribute('stroke-width', 2);
+
+    bugAssignedLine.setAttribute('stroke-width', strokeWidth);
     bugAssignedLine.setAttribute('stroke-linecap', "round");
     bugGroup.appendChild(bugAssignedLine);
 
@@ -579,10 +621,10 @@ function drawBug(bug){
   }
 }
 
-function drawWeeks(){
+function drawWeeks(year){
 
   let weekGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  let firstDay = getMondayOfFirstWeek(currentYear);
+  let firstDay = getMondayOfFirstWeek(year);
   weekGroup.classList.add('weeks');
   for(var i = 0; i <= 52; i++){
     let monday = new Date(firstDay.getTime() + (i * 7 * MILLISECOND_A_DAY));
@@ -597,6 +639,53 @@ function drawWeeks(){
     weekGroup.appendChild(weekLine);
   }
   svg.insertBefore(weekGroup,svg.firstChild);
+}
+
+function drawMonths(year){
+
+  let monthGroup = createSVGElement("g");
+  monthGroup.classList.add('months');
+
+  let monthWidth = 5;
+
+  for(var i = 0; i < 12; i++){
+    let firstDay = new Date(year, i, 1,0,0,0);
+    let x = getPositionFromDate(firstDay);
+    let monthLine = createSVGElement("line", {
+      "x1": x,
+      "y1": 0,
+      "x2": x,
+      "y2": 10000,
+      "stroke": "#FFC107",
+      "stroke-width": 0.5,
+      "stroke-opacity": 0.5
+    });
+
+    let monthText = createSVGElement("text", {
+      "x": (x + monthWidth/2),
+      "y": (monthWidth - 1) ,
+      "font-size": 4,
+      "font-family": "Signika",
+      "fill": "rgba(0,0,0,0.5)",
+      "text-anchor": "middle",
+      "title": MONTHS[i]
+    });
+    monthText.innerHTML = MONTHS[i][0];
+
+    let monthRect =  createSVGElement("rect", {
+      "x" : x,
+      "y" : 0,
+      "width" : monthWidth,
+      "height" : monthWidth,
+      "fill" : "#FFC107"
+    });
+
+    monthGroup.appendChild(monthRect);
+    monthGroup.appendChild(monthLine);
+    monthGroup.appendChild(monthText);
+  }
+
+  svg.insertBefore(monthGroup,svg.firstChild);
 }
 
 function zoomInBug(el){
@@ -881,7 +970,6 @@ function drawBugDetail(el, bugData){
   }
 
   let monthsAssigned = Math.ceil((bugData.endDate.getTime() - bugData.startDate.getTime() ) / MILLISECOND_A_DAY / 30);
-  let months = ['January','February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   if(monthsAssigned < 36){
     let firstDayOfMonth = new Date(bugData.startDate.getFullYear(),bugData.startDate.getMonth(),1);
     for(var i = 0; i <= Math.ceil((bugData.endDate.getTime() - bugData.startDate.getTime() ) / MILLISECOND_A_DAY / 30) ; i++){
@@ -902,7 +990,7 @@ function drawBugDetail(el, bugData){
 
       let monthNumber = firstDayOfMonth.getMonth();
       if(monthsAssigned < 9){
-        monthText.textContent = months[monthNumber];
+        monthText.textContent = MONTHS[monthNumber];
       } else {
         monthText.textContent = (monthNumber < 9?"0":"") + (monthNumber + 1);
       }
@@ -1017,8 +1105,10 @@ const DETAIL_PADDING = 15;
 const MONDAY_INDEX = 1;
 const MILLISECOND_A_DAY = (1000*60*60*24);
 const BUGZILLA_BIRTH_YEAR = 1998;
+const MONTHS = ['January','February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const BUGZILLA_API_URL = 'https://bugzilla.mozilla.org/rest/';
 const COLORS = ["rgb(244, 67, 54)","rgb(0, 150, 136)","rgb(96, 125, 139)","rgb(156, 39, 176)","rgb(103, 58, 183)","rgb(63, 81, 181)","rgb(33, 150, 243)","rgb(3, 169, 244)","rgb(0, 188, 212)","rgb(76, 175, 80)","rgb(139, 195, 74)","rgb(255, 193, 7)","rgb(255, 152, 0)","rgb(255, 87, 34)","rgb(233, 30, 99)","rgb(121, 85, 72)"];
+const PRIORITY_REGEX = /^P[1-5]$/;
 var USERS_COLORS = COLORS.map((x) => x);
 
 var lanes = [];
