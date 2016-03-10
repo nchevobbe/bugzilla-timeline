@@ -342,7 +342,8 @@ function setBugs(year){
     "creation_time",
     "resolution",
     "assigned_to",
-    "creator"
+    "creator",
+    "priority"
   ];
   var params = {
     "include_fields": fields.join(","),
@@ -382,21 +383,34 @@ function setBugs(year){
     data.bugs = data.bugs.filter((x) => !x.cf_last_resolved || new Date(x.cf_last_resolved) >= firstMonday);
 
     data.bugs.sort(function(a, b){
-      if(a.cf_last_resolved || b.cf_last_resolved){
-        if(!a.cf_last_resolved){
-          return 1;
-        }
-
-        if(!b.cf_last_resolved){
+      // If bugs have not the same state
+      if(a.cf_last_resolved != b.cf_last_resolved){
+        // If "a" is not resolved, a comes first
+        if(a.cf_last_resolved == null){
           return -1;
         }
 
-        return a.cf_last_resolved < b.cf_last_resolved ? -1 : 1;
+        // If "b" is not resolved, b comes first
+        if(b.cf_last_resolved == null){
+          return 1;
+        }
       }
 
-      return a.creation_time < b.creation_time ? -1 : 1;
+      var priorityA = (PRIORITY_REGEX.test(a.priority)?a.priority:'P3');
+      var priorityB = (PRIORITY_REGEX.test(b.priority)?b.priority:'P3');
+      // "a" and "b" are in the same state ( both resolved, or both unresolved)
+      // we want to get the higher priority bugs first
+      if(priorityA != priorityB){
+        return priorityA < priorityB ? -1:1;
+      }
 
+      // "a" and "b" are in the same state ( both resolved, or both unresolved)
+      // and have the same priority
+      // we want to get the older bugs first
+      return a.creation_time < b.creation_time ? -1 : 1;
     });
+
+
     data.bugs.forEach(function(bug){
       var bugExists = bugs.some(function(item){
       return (item.id == bug.id);
@@ -413,7 +427,7 @@ function setBugs(year){
           // - is assigned on the bug
           bug.history.some(function(activity){
 
-            var hasAssignement = (activity.who === bugzillaEmail)
+            var hasAssignement = (activity.who === bugzillaEmail);
             if(!hasAssignement){
               activity.changes.some(function(change){
                 return (
@@ -547,6 +561,17 @@ function createSVGElement(tagName, attributes){
 
 function drawBug(bug){
   if(bug.startDate){
+    var strokeWidth = 2;
+    var endCircleR = 1.75;
+    var minMultiplier = 0.25;
+    var maxMultiplier = 1.75;
+
+    if(PRIORITY_REGEX.test(bug.priority)){
+      var priorityRatio = minMultiplier + ((((-1.25/5) * bug.priority[1]) + 1.25) * (maxMultiplier - minMultiplier));
+      strokeWidth = strokeWidth * priorityRatio;
+      endCircleR = endCircleR * priorityRatio;
+    }
+
     var colorIndex = (bug.id % (COLORS.length - 1));
     var bugColor = COLORS[colorIndex];
 
@@ -562,14 +587,14 @@ function drawBug(bug){
     var bugGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
     bugGroup.classList.add('bug-line');
     bugGroup.setAttribute('data-bug-id', bug.id);
-    bugGroup.setAttribute('data-tooltip', `Bug ${bug.id}<hr>${bug.summary}`);
+    bugGroup.setAttribute('data-tooltip', `Bug ${bug.id}${PRIORITY_REGEX.test(bug.priority)?" [" + bug.priority + "]":""}<hr>${bug.summary}`);
 
     if(bug.cf_last_resolved && bug.resolution == 'FIXED'){
       var endCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       endCircle.classList.add('resolved');
       endCircle.setAttribute('cx', endPoint);
       endCircle.setAttribute('cy', y);
-      endCircle.setAttribute('r', 2);
+      endCircle.setAttribute('r', endCircleR);
       endCircle.setAttribute('fill', bugColor);
       bugGroup.appendChild(endCircle);
     }
@@ -580,7 +605,8 @@ function drawBug(bug){
     bugAssignedLine.setAttribute('x2', endPoint);
     bugAssignedLine.setAttribute('y2', y);
     bugAssignedLine.setAttribute('stroke', bugColor);
-    bugAssignedLine.setAttribute('stroke-width', 2);
+
+    bugAssignedLine.setAttribute('stroke-width', strokeWidth);
     bugAssignedLine.setAttribute('stroke-linecap', "round");
     bugGroup.appendChild(bugAssignedLine);
 
@@ -1074,6 +1100,7 @@ const BUGZILLA_BIRTH_YEAR = 1998;
 const MONTHS = ['January','February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const BUGZILLA_API_URL = 'https://bugzilla.mozilla.org/rest/';
 const COLORS = ["rgb(244, 67, 54)","rgb(0, 150, 136)","rgb(96, 125, 139)","rgb(156, 39, 176)","rgb(103, 58, 183)","rgb(63, 81, 181)","rgb(33, 150, 243)","rgb(3, 169, 244)","rgb(0, 188, 212)","rgb(76, 175, 80)","rgb(139, 195, 74)","rgb(255, 193, 7)","rgb(255, 152, 0)","rgb(255, 87, 34)","rgb(233, 30, 99)","rgb(121, 85, 72)"];
+const PRIORITY_REGEX = /^P[1-5]$/;
 var USERS_COLORS = COLORS.map((x) => x);
 
 var lanes = [];
