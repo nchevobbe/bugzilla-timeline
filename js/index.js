@@ -590,7 +590,7 @@ function drawBug(bug){
       lanes[laneNumber] = [];
     }
     lanes[laneNumber].push([startPoint,endPoint]);
-    var y = (LINE_HEIGHT) + (laneNumber * LINE_HEIGHT);
+    var y = (LINE_HEIGHT * 1.5) + (laneNumber * LINE_HEIGHT);
     var bugGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
     bugGroup.classList.add('bug-line');
     bugGroup.setAttribute('data-bug-id', bug.id);
@@ -657,7 +657,8 @@ function drawMonths(year){
       "x2": x,
       "y2": 10000,
       "stroke": "#FFC107",
-      "stroke-width": 0.5
+      "stroke-width": 0.5,
+      "stroke-opacity": 0.5
     });
 
     let monthText = createSVGElement("text", {
