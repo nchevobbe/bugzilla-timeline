@@ -18,11 +18,17 @@ function onEmailChange(email){
     if(isZoomed()){
       zoomOut();
     }
-
+    svg.innerHTML = "";
     bugzillaEmail = email;
     document.querySelector('.email').textContent = email;
     emailInput.value = email;
-    setDashboardYear((new Date()).getFullYear(), true);
+
+    getUserBugs().then(function(data){
+      lanes = [];
+      displayedYears = [];
+      bugs = data.bugs;
+      setDashboardYear((new Date()).getFullYear());
+    })
   }
 }
 
@@ -238,18 +244,11 @@ function onSvgClick(e){
   }
 }
 
-function setDashboardYear(year, reset){
+function setDashboardYear(year){
   if(isMoving){
     return;
   }
   currentYear = year;
-
-  if(reset){
-    bugs = [];
-    lanes = [];
-    displayedYears = [];
-    svg.innerHTML = "";
-  }
 
   document.querySelector('nav .year').textContent = year;
 
@@ -260,7 +259,7 @@ function setDashboardYear(year, reset){
     displayedYears.push(year);
     drawMonths(year);
     drawWeeks(year);
-    setBugs(year).catch((ex) => console.error(ex));
+    fetchBugsHistoryForYear(year).catch((ex) => console.error(ex));
   }
 };
 
@@ -329,10 +328,7 @@ function updateDashboardNavigation(year){
 
 }
 
-function setBugs(year){
-  document.querySelector('nav').classList.add('loading');
-  let firstMonday = getMondayOfFirstWeek(year);
-
+function getUserBugs(){
   let fields = [
     "id",
     "summary",
@@ -375,104 +371,110 @@ function setBugs(year){
     method: 'GET',
     headers: myHeaders
   })
-  .then((response) => response.json())
-  .then(function(data){
+  .then((response) => response.json());
+}
 
-    var promises = [];
+function fetchBugsHistoryForYear(year){
+  document.querySelector('nav').classList.add('loading');
+  let firstMonday = getMondayOfFirstWeek(year);
 
-    data.bugs = data.bugs.filter((x) => !x.cf_last_resolved || new Date(x.cf_last_resolved) >= firstMonday);
+  let yearBugs = bugs.filter(function(x){
+    if(x.displayed){
+      return false;
+    }
 
-    data.bugs.sort(function(a, b){
-      // If bugs have not the same state
-      if(a.cf_last_resolved != b.cf_last_resolved){
-        // If "a" is not resolved, a comes first
-        if(a.cf_last_resolved == null){
-          return -1;
-        }
+    if(!x.cf_last_resolved){
+      return true;
+    }
 
-        // If "b" is not resolved, b comes first
-        if(b.cf_last_resolved == null){
-          return 1;
-        }
+    return (new Date(x.cf_last_resolved) >= firstMonday);
+  });
+
+  yearBugs.sort(function(a, b){
+    // If bugs have not the same state
+    if(a.cf_last_resolved != b.cf_last_resolved){
+      // If "a" is not resolved, a comes first
+      if(a.cf_last_resolved == null){
+        return -1;
       }
 
-      var priorityA = (PRIORITY_REGEX.test(a.priority)?a.priority:'P3');
-      var priorityB = (PRIORITY_REGEX.test(b.priority)?b.priority:'P3');
-      // "a" and "b" are in the same state ( both resolved, or both unresolved)
-      // we want to get the higher priority bugs first
-      if(priorityA != priorityB){
-        return priorityA < priorityB ? -1:1;
+      // If "b" is not resolved, b comes first
+      if(b.cf_last_resolved == null){
+        return 1;
       }
+    }
 
-      // "a" and "b" are in the same state ( both resolved, or both unresolved)
-      // and have the same priority
-      // we want to get the older bugs first
-      return a.creation_time < b.creation_time ? -1 : 1;
+    var priorityA = (PRIORITY_REGEX.test(a.priority)?a.priority:'P3');
+    var priorityB = (PRIORITY_REGEX.test(b.priority)?b.priority:'P3');
+    // "a" and "b" are in the same state ( both resolved, or both unresolved)
+    // we want to get the higher priority bugs first
+    if(priorityA != priorityB){
+      return priorityA < priorityB ? -1:1;
+    }
+
+    // "a" and "b" are in the same state ( both resolved, or both unresolved)
+    // and have the same priority
+    // we want to get the older bugs first
+    return a.creation_time < b.creation_time ? -1 : 1;
+  });
+
+  return yearBugs.reduce(function(previousBugPromise, bug, idx){
+    return new Promise(function(resolve, reject){
+      var historyPromise = getBugHistory(bug).then(function(history){
+        bug.history = history;
+
+        // A bug is being worked on by the user when :
+        // - creates the bug
+        // - changes the bug
+        // - is cc'ed on the bug
+        // - is assigned on the bug
+        bug.history.some(function(activity){
+
+          var hasAssignement = (activity.who === bugzillaEmail);
+          if(!hasAssignement){
+            activity.changes.some(function(change){
+              return (
+                (
+                  change.field_name === 'cc' ||
+                  change.field_name === 'assigned_to'
+                ) && change.added === bugzillaEmail
+              );
+            });
+          }
+
+          if(hasAssignement === true){
+            bug.startDate = new Date(activity.when);
+            return true;
+          }
+        });
+
+        if(!bug.startDate && bug.assigned_to === bugzillaEmail){
+          bug.startDate = new Date(bug.creation_time);
+        }
+
+
+        if(bug.cf_last_resolved){
+          bug.endDate = new Date(bug.cf_last_resolved);
+        } else {
+          bug.endDate = new Date();
+        }
+
+        return Promise.resolve(bug);
+      });
+
+      var promises = [historyPromise,previousBugPromise];
+      Promise.all(promises).then(function(data){
+        let bug = data[promises.indexOf(historyPromise)];
+        let idx = bugs.findIndex((item) => item.id === bug.id);
+        if(idx != -1){
+          bugs[idx] = bug;
+        }
+        drawBug(bug);
+        bug.displayed = true;
+        resolve();
+      });
     });
-
-    return data.bugs.reduce(function(previousBugPromise, bug, idx){
-      var bugExists = bugs.some(function(item){
-        return (item.id == bug.id);
-      });
-
-      if(bugExists){
-        return Promise.resolve();
-      }
-
-      return new Promise(function(resolve, reject){
-        var historyPromise = getBugHistory(bug).then(function(history){
-          bug.history = history;
-
-          // A bug is being worked on by the user when :
-          // - creates the bug
-          // - changes the bug
-          // - is cc'ed on the bug
-          // - is assigned on the bug
-          bug.history.some(function(activity){
-
-            var hasAssignement = (activity.who === bugzillaEmail);
-            if(!hasAssignement){
-              activity.changes.some(function(change){
-                return (
-                  (
-                    change.field_name === 'cc' ||
-                    change.field_name === 'assigned_to'
-                  ) && change.added === bugzillaEmail
-                );
-              });
-            }
-
-            if(hasAssignement === true){
-              bug.startDate = new Date(activity.when);
-              return true;
-            }
-          });
-
-          if(!bug.startDate && bug.assigned_to === bugzillaEmail){
-            bug.startDate = new Date(bug.creation_time);
-          }
-
-
-          if(bug.cf_last_resolved){
-            bug.endDate = new Date(bug.cf_last_resolved);
-          } else {
-            bug.endDate = new Date();
-          }
-
-          return Promise.resolve(bug);
-        });
-
-        var promises = [historyPromise,previousBugPromise];
-        Promise.all(promises).then(function(data){
-          var bug = data[promises.indexOf(historyPromise)];
-          bugs.push(bug);
-          drawBug(bug);
-
-          resolve();
-        });
-      });
-    }, Promise.resolve());
-  })
+  }, Promise.resolve())
   .then(function(){
     document.querySelector('nav').classList.remove('loading');
   })
