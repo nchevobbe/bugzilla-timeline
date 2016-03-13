@@ -206,7 +206,6 @@ nav #esc {
 }
 
 .zoomed #esc {
-  align-self: start;
   display: block;
 }
 
