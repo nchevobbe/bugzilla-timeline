@@ -18,11 +18,17 @@ function onEmailChange(email){
     if(isZoomed()){
       zoomOut();
     }
-
+    svg.innerHTML = "";
     bugzillaEmail = email;
     document.querySelector('.email').textContent = email;
     emailInput.value = email;
-    setDashboardYear((new Date()).getFullYear(), true);
+
+    getUserBugs().then(function(data){
+      lanes = [];
+      displayedYears = [];
+      bugs = data.bugs;
+      setDashboardYear((new Date()).getFullYear());
+    })
   }
 }
 
@@ -75,6 +81,17 @@ function getEmail(){
   return null;
 }
 
+function needWhiteText(rgb){
+  let values = rgb.replace("rgb(","").replace(")","").replace(" ","").split(",");
+
+  var r = parseInt(values[0],10);
+  var g = parseInt(values[1],10);
+  var b = parseInt(values[2],10);
+  var yiq = ((r*299)+(g*587)+(b*114))/1000;
+  console.log("needWhiteText", values, "yiq", yiq);
+  return (yiq < 120);
+}
+
 function hideTooltip(){
   if(tooltipEl.innerHTML === ""){
     return;
@@ -85,6 +102,7 @@ function hideTooltip(){
     tooltipEl.style.top = `0`;
     tooltipEl.style.backgroundColor = "";
     tooltipEl.textContent = "";
+    tooltipEl.classList.remove("dark");
   },200);
   return tooltipHideId;
 }
@@ -158,6 +176,11 @@ function onMouseMove(e){
       }
       if(e.target.getAttribute('fill')){
         tooltipEl.style.backgroundColor = e.target.getAttribute('fill');
+      }
+      if(needWhiteText(tooltipEl.style.backgroundColor)){
+        tooltipEl.classList.add("dark");
+      } else {
+        tooltipEl.classList.remove("dark");
       }
     }
   } else {
@@ -238,18 +261,11 @@ function onSvgClick(e){
   }
 }
 
-function setDashboardYear(year, reset){
+function setDashboardYear(year){
   if(isMoving){
     return;
   }
   currentYear = year;
-
-  if(reset){
-    bugs = [];
-    lanes = [];
-    displayedYears = [];
-    svg.innerHTML = "";
-  }
 
   document.querySelector('nav .year').textContent = year;
 
@@ -260,7 +276,7 @@ function setDashboardYear(year, reset){
     displayedYears.push(year);
     drawMonths(year);
     drawWeeks(year);
-    setBugs(year).catch((ex) => console.error(ex));
+    fetchBugsHistoryForYear(year).catch((ex) => console.error(ex));
   }
 };
 
@@ -329,10 +345,7 @@ function updateDashboardNavigation(year){
 
 }
 
-function setBugs(year){
-  document.querySelector('nav').classList.add('loading');
-  let firstMonday = getMondayOfFirstWeek(year);
-
+function getUserBugs(){
   let fields = [
     "id",
     "summary",
@@ -375,104 +388,110 @@ function setBugs(year){
     method: 'GET',
     headers: myHeaders
   })
-  .then((response) => response.json())
-  .then(function(data){
+  .then((response) => response.json());
+}
 
-    var promises = [];
+function fetchBugsHistoryForYear(year){
+  document.querySelector('nav').classList.add('loading');
+  let firstMonday = getMondayOfFirstWeek(year);
 
-    data.bugs = data.bugs.filter((x) => !x.cf_last_resolved || new Date(x.cf_last_resolved) >= firstMonday);
+  let yearBugs = bugs.filter(function(x){
+    if(x.displayed){
+      return false;
+    }
 
-    data.bugs.sort(function(a, b){
-      // If bugs have not the same state
-      if(a.cf_last_resolved != b.cf_last_resolved){
-        // If "a" is not resolved, a comes first
-        if(a.cf_last_resolved == null){
-          return -1;
-        }
+    if(!x.cf_last_resolved){
+      return true;
+    }
 
-        // If "b" is not resolved, b comes first
-        if(b.cf_last_resolved == null){
-          return 1;
-        }
+    return (new Date(x.cf_last_resolved) >= firstMonday);
+  });
+
+  yearBugs.sort(function(a, b){
+    // If bugs have not the same state
+    if(a.cf_last_resolved != b.cf_last_resolved){
+      // If "a" is not resolved, a comes first
+      if(a.cf_last_resolved == null){
+        return -1;
       }
 
-      var priorityA = (PRIORITY_REGEX.test(a.priority)?a.priority:'P3');
-      var priorityB = (PRIORITY_REGEX.test(b.priority)?b.priority:'P3');
-      // "a" and "b" are in the same state ( both resolved, or both unresolved)
-      // we want to get the higher priority bugs first
-      if(priorityA != priorityB){
-        return priorityA < priorityB ? -1:1;
+      // If "b" is not resolved, b comes first
+      if(b.cf_last_resolved == null){
+        return 1;
       }
+    }
 
-      // "a" and "b" are in the same state ( both resolved, or both unresolved)
-      // and have the same priority
-      // we want to get the older bugs first
-      return a.creation_time < b.creation_time ? -1 : 1;
+    var priorityA = (PRIORITY_REGEX.test(a.priority)?a.priority:'P3');
+    var priorityB = (PRIORITY_REGEX.test(b.priority)?b.priority:'P3');
+    // "a" and "b" are in the same state ( both resolved, or both unresolved)
+    // we want to get the higher priority bugs first
+    if(priorityA != priorityB){
+      return priorityA < priorityB ? -1:1;
+    }
+
+    // "a" and "b" are in the same state ( both resolved, or both unresolved)
+    // and have the same priority
+    // we want to get the older bugs first
+    return a.creation_time < b.creation_time ? -1 : 1;
+  });
+
+  return yearBugs.reduce(function(previousBugPromise, bug, idx){
+    return new Promise(function(resolve, reject){
+      var historyPromise = getBugHistory(bug).then(function(history){
+        bug.history = history;
+
+        // A bug is being worked on by the user when :
+        // - creates the bug
+        // - changes the bug
+        // - is cc'ed on the bug
+        // - is assigned on the bug
+        bug.history.some(function(activity){
+
+          var hasAssignement = (activity.who === bugzillaEmail);
+          if(!hasAssignement){
+            activity.changes.some(function(change){
+              return (
+                (
+                  change.field_name === 'cc' ||
+                  change.field_name === 'assigned_to'
+                ) && change.added === bugzillaEmail
+              );
+            });
+          }
+
+          if(hasAssignement === true){
+            bug.startDate = new Date(activity.when);
+            return true;
+          }
+        });
+
+        if(!bug.startDate && bug.assigned_to === bugzillaEmail){
+          bug.startDate = new Date(bug.creation_time);
+        }
+
+
+        if(bug.cf_last_resolved){
+          bug.endDate = new Date(bug.cf_last_resolved);
+        } else {
+          bug.endDate = new Date();
+        }
+
+        return Promise.resolve(bug);
+      });
+
+      var promises = [historyPromise,previousBugPromise];
+      Promise.all(promises).then(function(data){
+        let bug = data[promises.indexOf(historyPromise)];
+        let idx = bugs.findIndex((item) => item.id === bug.id);
+        if(idx != -1){
+          bugs[idx] = bug;
+        }
+        drawBug(bug);
+        bug.displayed = true;
+        resolve();
+      });
     });
-
-    return data.bugs.reduce(function(previousBugPromise, bug, idx){
-      var bugExists = bugs.some(function(item){
-        return (item.id == bug.id);
-      });
-
-      if(bugExists){
-        return Promise.resolve();
-      }
-
-      return new Promise(function(resolve, reject){
-        var historyPromise = getBugHistory(bug).then(function(history){
-          bug.history = history;
-
-          // A bug is being worked on by the user when :
-          // - creates the bug
-          // - changes the bug
-          // - is cc'ed on the bug
-          // - is assigned on the bug
-          bug.history.some(function(activity){
-
-            var hasAssignement = (activity.who === bugzillaEmail);
-            if(!hasAssignement){
-              activity.changes.some(function(change){
-                return (
-                  (
-                    change.field_name === 'cc' ||
-                    change.field_name === 'assigned_to'
-                  ) && change.added === bugzillaEmail
-                );
-              });
-            }
-
-            if(hasAssignement === true){
-              bug.startDate = new Date(activity.when);
-              return true;
-            }
-          });
-
-          if(!bug.startDate && bug.assigned_to === bugzillaEmail){
-            bug.startDate = new Date(bug.creation_time);
-          }
-
-
-          if(bug.cf_last_resolved){
-            bug.endDate = new Date(bug.cf_last_resolved);
-          } else {
-            bug.endDate = new Date();
-          }
-
-          return Promise.resolve(bug);
-        });
-
-        var promises = [historyPromise,previousBugPromise];
-        Promise.all(promises).then(function(data){
-          var bug = data[promises.indexOf(historyPromise)];
-          bugs.push(bug);
-          drawBug(bug);
-
-          resolve();
-        });
-      });
-    }, Promise.resolve());
-  })
+  }, Promise.resolve())
   .then(function(){
     document.querySelector('nav').classList.remove('loading');
   })
@@ -591,51 +610,57 @@ function drawBug(bug){
     }
     lanes[laneNumber].push([startPoint,endPoint]);
     var y = (LINE_HEIGHT * 1.5) + (laneNumber * LINE_HEIGHT);
-    var bugGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    bugGroup.classList.add('bug-line');
-    bugGroup.setAttribute('data-bug-id', bug.id);
-    bugGroup.setAttribute('data-tooltip', `Bug ${bug.id}${PRIORITY_REGEX.test(bug.priority)?" [" + bug.priority + "]":""}<hr>${bug.summary}`);
+    var bugGroup = createSVGElement("g", {
+      "class": "bug-line",
+      "data-bug-id": bug.id,
+      "data-tooltip": `
+        Bug ${bug.id}
+        ${PRIORITY_REGEX.test(bug.priority)?" [" + bug.priority + "]":""}
+        <hr>
+        ${bug.summary}`
+    });
 
     if(bug.cf_last_resolved && bug.resolution == 'FIXED'){
-      var endCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      endCircle.classList.add('resolved');
-      endCircle.setAttribute('cx', endPoint);
-      endCircle.setAttribute('cy', y);
-      endCircle.setAttribute('r', endCircleR);
-      endCircle.setAttribute('fill', bugColor);
+      var endCircle = createSVGElement("circle", {
+        "class": "resolved",
+        "cx": endPoint,
+        "cy": y,
+        "r": endCircleR,
+        "fill": bugColor
+      });
       bugGroup.appendChild(endCircle);
     }
 
-    var bugAssignedLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    bugAssignedLine.setAttribute('x1', startPoint);
-    bugAssignedLine.setAttribute('y1', y);
-    bugAssignedLine.setAttribute('x2', endPoint);
-    bugAssignedLine.setAttribute('y2', y);
-    bugAssignedLine.setAttribute('stroke', bugColor);
-
-    bugAssignedLine.setAttribute('stroke-width', strokeWidth);
-    bugAssignedLine.setAttribute('stroke-linecap', "round");
+    var bugAssignedLine = createSVGElement("line",{
+      "x1": startPoint,
+      "y1": y,
+      "x2": endPoint,
+      "y2": y,
+      "stroke": bugColor,
+      "stroke-width": strokeWidth,
+      "stroke-linecap": "round"
+    });
     bugGroup.appendChild(bugAssignedLine);
-
     svg.appendChild(bugGroup);
   }
 }
 
 function drawWeeks(year){
 
-  let weekGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  let weekGroup = createSVGElement("g");
   let firstDay = getMondayOfFirstWeek(year);
   weekGroup.classList.add('weeks');
   for(var i = 0; i <= 52; i++){
     let monday = new Date(firstDay.getTime() + (i * 7 * MILLISECOND_A_DAY));
-    let weekLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
     let x = getPositionFromDate(monday);
-    weekLine.setAttribute('x1', x);
-    weekLine.setAttribute('y1', 0);
-    weekLine.setAttribute('x2', x);
-    weekLine.setAttribute('y2', 10000);
-    weekLine.setAttribute('stroke', 'rgba(0,0,0,0.3)');
-    weekLine.setAttribute('stroke-width', 0.1);
+    let weekLine = createSVGElement("line", {
+      "x1": x,
+      "y1": 0,
+      "x2": x,
+      "y2": 10000,
+      "stroke": "rgba(0,0,0,0.3)",
+      "stroke-width": 0.1
+    });
     weekGroup.appendChild(weekLine);
   }
   svg.insertBefore(weekGroup,svg.firstChild);
@@ -643,9 +668,9 @@ function drawWeeks(year){
 
 function drawMonths(year){
 
-  let monthGroup = createSVGElement("g");
-  monthGroup.classList.add('months');
-
+  let monthGroup = createSVGElement("g",{
+    "class": "months"
+  });
   let monthWidth = 5;
 
   for(var i = 0; i < 12; i++){
@@ -756,27 +781,30 @@ function drawBugDetail(el, bugData){
   let bugPeriod = [bugData.startDate, bugData.endDate];
   let y = svg.viewBox.baseVal.y + 60;
 
-  let bugGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  bugGroup.classList.add('detail-bug-line');
+  let bugGroup = createSVGElement("g", {
+    "class": "detail-bug-line"
+  });
 
   if(bugData.endDate && bugData.resolution == 'FIXED'){
-    let endCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    endCircle.setAttribute('cx',getPositionFromDate(bugData.endDate,bugPeriod));
-    endCircle.setAttribute('cy', y);
-    endCircle.setAttribute('r', 9);
-    endCircle.setAttribute('fill', 'rgba(0,0,0,0.3)');
-    endCircle.setAttribute('data-tooltip',`RESOLVED ${bugData.cf_last_resolved}`)
+    let endCircle = createSVGElement("circle", {
+      "cx": getPositionFromDate(bugData.endDate,bugPeriod),
+      "cy": y,
+      "r": 9,
+      "fill": "rgba(0,0,0,0.3)",
+      "data-tooltip":`RESOLVED ${bugData.cf_last_resolved}`
+    });
     bugGroup.appendChild(endCircle);
   }
 
-  let bugLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  bugLine.setAttribute('x1', getPositionFromDate(new Date(bugData.creation_time),bugPeriod));
-  bugLine.setAttribute('y1', y);
-  bugLine.setAttribute('x2', getPositionFromDate(bugData.endDate,bugPeriod));
-  bugLine.setAttribute('y2', y);
-  bugLine.setAttribute('stroke', 'rgba(0,0,0,1)');
-  bugLine.setAttribute('stroke-width', 2);
-  bugLine.setAttribute('stroke-linecap', 'round');
+  let bugLine = createSVGElement("line", {
+    "x1": getPositionFromDate(new Date(bugData.creation_time),bugPeriod),
+    "y1": y,
+    "x2": getPositionFromDate(bugData.endDate,bugPeriod),
+    "y2": y,
+    "stroke": "rgba(0,0,0,1)",
+    "stroke-width": 2,
+    "stroke-linecap": "round"
+  });
   bugGroup.appendChild(bugLine);
 
   let groups = [];
@@ -833,41 +861,46 @@ function drawBugDetail(el, bugData){
   var circleR = 10;
 
   groups.forEach(function(group, index){
-    var groupGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    var groupGroup = createSVGElement("g");
 
     var strokeWidth = 2;
     var x1 = group[0].x;
     var x2 = group[group.length - 1].x;
 
-    var groupLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-
-    groupLine.setAttribute('x1',x1);
-    groupLine.setAttribute('x2',x2);
-    groupLine.setAttribute('y1', y);
-    groupLine.setAttribute('y2', y);
-    groupLine.setAttribute('stroke', 'rgba(0,0,0,1)');
-    groupLine.setAttribute('stroke-width', 12 );
-    groupLine.setAttribute('stroke-linecap', 'round');
+    var groupLine = createSVGElement("line", {
+      "x1": x1,
+      "x2": x2,
+      "y1": y,
+      "y2": y,
+      "stroke": "rgba(0,0,0,1)",
+      "stroke-width": 12,
+      "stroke-linecap": "round"
+    });
     groupGroup.appendChild(groupLine);
 
-    var clipId = 'group-'+index;
-    var groupClipath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
-    groupClipath.setAttribute('id',clipId);
-    var startCircleClip = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    startCircleClip.setAttribute('cx',x1);
-    startCircleClip.setAttribute('cy',y);
-    startCircleClip.setAttribute('r',circleR / 2);
+    var clipId = "group-"+index;
+    var groupClipath = createSVGElement("clipPath", {
+      "id": clipId
+    });
 
-    var endCircleClip = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    endCircleClip.setAttribute('cx',x2);
-    endCircleClip.setAttribute('cy',y);
-    endCircleClip.setAttribute('r',circleR / 2);
+    var startCircleClip = createSVGElement("circle", {
+      "cx": x1,
+      "cy": y,
+      "r": (circleR / 2)
+    });
 
-    var rectClip = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rectClip.setAttribute("x",x1);
-    rectClip.setAttribute("y",y - (circleR/2) );
-    rectClip.setAttribute("height",circleR );
-    rectClip.setAttribute("width", x2-x1);
+    var endCircleClip = createSVGElement("circle", {
+      "cx": x2,
+      "cy": y,
+      "r": (circleR / 2)
+    });
+
+    var rectClip = createSVGElement("rect", {
+      "x": x1,
+      "y": (y - (circleR/2)),
+      "height": circleR,
+      "width": (x2-x1)
+    });
 
     groupClipath.appendChild(startCircleClip);
     groupClipath.appendChild(endCircleClip);
@@ -881,16 +914,17 @@ function drawBugDetail(el, bugData){
     var groupEnd = x2 + (circleR / 2) + stroke;
     var entryWidth = (groupEnd - groupStart)/group.length;
     group.forEach(function(groupEntry, idx){
-      var entryRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      entryRect.setAttribute('x', groupStart  + (entryWidth * idx) );
-      entryRect.setAttribute('width', entryWidth );
-      entryRect.setAttribute('fill', groupEntry.color);
-      entryRect.setAttribute('stroke', 'black');
-      entryRect.setAttribute('data-tooltip', groupEntry.title);
-      entryRect.setAttribute('y', y - circleR );
-      entryRect.setAttribute('height', circleR * 2);
-      entryRect.setAttribute('stroke-width', stroke);
-      entryRect.setAttribute('clip-path',`url(#${clipId})`);
+      var entryRect = createSVGElement("rect", {
+        "x": groupStart  + (entryWidth * idx) ,
+        "width": entryWidth ,
+        "fill": groupEntry.color,
+        "stroke": "black",
+        "data-tooltip": groupEntry.title,
+        "y": y - circleR ,
+        "height": circleR * 2,
+        "stroke-width": stroke,
+        "clip-path": `url(#${clipId})`
+      });
       groupGroup.appendChild(entryRect);
     })
 
@@ -901,61 +935,66 @@ function drawBugDetail(el, bugData){
 
   let daysOfAssignement = (bugData.endDate.getTime() - bugData.startDate.getTime() ) / MILLISECOND_A_DAY;
 
-  let yearHorizontalLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  yearHorizontalLine.setAttribute('x1', svg.viewBox.baseVal.x);
-  yearHorizontalLine.setAttribute('x2', svg.viewBox.baseVal.x + svg.viewBox.baseVal.width);
-  yearHorizontalLine.setAttribute('y1', y - 50);
-  yearHorizontalLine.setAttribute('y2', y - 50);
-  yearHorizontalLine.setAttribute('stroke', 'black');
-  yearHorizontalLine.setAttribute('stroke-opacity', 0.4);
-  yearHorizontalLine.setAttribute('stroke-width', 0.2);
+  let yearHorizontalLine = createSVGElement("line", {
+    "x1": svg.viewBox.baseVal.x,
+    "x2": svg.viewBox.baseVal.x + svg.viewBox.baseVal.width,
+    "y1": y - 50,
+    "y2": y - 50,
+    "stroke": "black",
+    "stroke-opacity": 0.4,
+    "stroke-width": 0.2
+  });
   bugGroup.insertBefore(yearHorizontalLine,bugGroup.firstChild);
 
-  let monthHorizontalLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  monthHorizontalLine.setAttribute('x1', svg.viewBox.baseVal.x);
-  monthHorizontalLine.setAttribute('x2', svg.viewBox.baseVal.x + svg.viewBox.baseVal.width);
-  monthHorizontalLine.setAttribute('y1', y - 40);
-  monthHorizontalLine.setAttribute('y2', y - 40);
-  monthHorizontalLine.setAttribute('stroke', 'black');
-  monthHorizontalLine.setAttribute('stroke-opacity', 0.4);
-  monthHorizontalLine.setAttribute('stroke-width', 0.2);
+  let monthHorizontalLine = createSVGElement("line", {
+    "x1": svg.viewBox.baseVal.x,
+    "x2": svg.viewBox.baseVal.x + svg.viewBox.baseVal.width,
+    "y1": y - 40,
+    "y2": y - 40,
+    "stroke": "black",
+    "stroke-opacity": 0.4,
+    "stroke-width": 0.2
+  });
   bugGroup.insertBefore(monthHorizontalLine,bugGroup.firstChild);
 
   if( daysOfAssignement < 45) {
-    let dayHorizontalLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    dayHorizontalLine.setAttribute('x1', svg.viewBox.baseVal.x);
-    dayHorizontalLine.setAttribute('x2', svg.viewBox.baseVal.x + svg.viewBox.baseVal.width);
-    dayHorizontalLine.setAttribute('y1', y - 30);
-    dayHorizontalLine.setAttribute('y2', y - 30);
-    dayHorizontalLine.setAttribute('stroke', 'black');
-    dayHorizontalLine.setAttribute('stroke-opacity', 0.4);
-    dayHorizontalLine.setAttribute('stroke-width', 0.2);
+    let dayHorizontalLine = createSVGElement("line", {
+      "x1": svg.viewBox.baseVal.x,
+      "x2": svg.viewBox.baseVal.x + svg.viewBox.baseVal.width,
+      "y1": y - 30,
+      "y2": y - 30,
+      "stroke": "black",
+      "stroke-opacity": 0.4,
+      "stroke-width": 0.2
+    });
     bugGroup.insertBefore(dayHorizontalLine,bugGroup.firstChild);
 
     for(var i = 0; i <= daysOfAssignement + 2 ; i++){
       var day = new Date(bugData.startDate.getTime() + ( i * MILLISECOND_A_DAY));
       day.setHours(0,0,0);
-      var dayLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
       var pos = getPositionFromDate(day,bugPeriod);
-      dayLine.setAttribute('x1',pos);
-      dayLine.setAttribute('y1', y - 40);
-      dayLine.setAttribute('x2', pos);
-      dayLine.setAttribute('y2', y + circleR);
-      dayLine.setAttribute('stroke', 'black');
-      dayLine.setAttribute('stroke-opacity', 0.1);
-      dayLine.setAttribute('stroke-width', .5);
+      var dayLine = createSVGElement("line", {
+        "x1": pos,
+        "y1": y - 40,
+        "x2": pos,
+        "y2": y + circleR,
+        "stroke": "black",
+        "stroke-opacity": 0.1,
+        "stroke-width": .5
+      });
       bugGroup.insertBefore(dayLine,bugGroup.firstChild);
 
-      var dayText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      dayText.textContent = day.getDate();
       if(pos < svg.viewBox.baseVal.x ){
         pos = svg.viewBox.baseVal.x;
       }
-      dayText.setAttribute('x', pos + 1);
-      dayText.setAttribute('y', y - 40 + 8 );
-      dayText.setAttribute('font-size',8);
-      dayText.setAttribute('font-family','Signika');
-      dayText.setAttribute('fill', '#666');
+      var dayText = createSVGElement("text", {
+        "x": (pos + 1),
+        "y": (y - 40 + 8),
+        "font-size": 8,
+        "font-family": "Signika",
+        "fill": "#666"
+      });
+      dayText.textContent = day.getDate();
 
       let tomorrow = new Date(day.getTime() +  MILLISECOND_A_DAY);
       let nextPos = getPositionFromDate(tomorrow, bugPeriod);
@@ -975,18 +1014,29 @@ function drawBugDetail(el, bugData){
     for(var i = 0; i <= Math.ceil((bugData.endDate.getTime() - bugData.startDate.getTime() ) / MILLISECOND_A_DAY / 30) ; i++){
       var day = new Date(bugData.startDate.getTime() + ( i * MILLISECOND_A_DAY));
       firstDayOfMonth.setHours(0,0,0);
-      var monthLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
       var pos = getPositionFromDate(firstDayOfMonth,bugPeriod);
-      monthLine.setAttribute('x1',pos);
-      monthLine.setAttribute('y1', y - 50);
-      monthLine.setAttribute('x2', pos);
-      monthLine.setAttribute('y2', y + circleR);
-      monthLine.setAttribute('stroke', 'black');
-      monthLine.setAttribute('stroke-opacity', 0.1);
-      monthLine.setAttribute('stroke-width', .5);
+      var monthLine = createSVGElement("line", {
+        "x1": pos,
+        "y1": y - 50,
+        "x2": pos,
+        "y2": y + circleR,
+        "stroke": "black",
+        "stroke-opacity": 0.1,
+        "stroke-width": .5,
+      });
       bugGroup.insertBefore(monthLine,bugGroup.firstChild);
 
-      var monthText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      if(pos < svg.viewBox.baseVal.x ){
+        pos = svg.viewBox.baseVal.x;
+      }
+
+      var monthText = createSVGElement("text", {
+        "x": pos + 1,
+        "y": y - 50 + 8 ,
+        "font-size": 8,
+        "font-family": "Signika",
+        "fill": "#666"
+      });
 
       let monthNumber = firstDayOfMonth.getMonth();
       if(monthsAssigned < 9){
@@ -994,14 +1044,7 @@ function drawBugDetail(el, bugData){
       } else {
         monthText.textContent = (monthNumber < 9?"0":"") + (monthNumber + 1);
       }
-      if(pos < svg.viewBox.baseVal.x ){
-        pos = svg.viewBox.baseVal.x;
-      }
-      monthText.setAttribute('x', pos + 1);
-      monthText.setAttribute('y', y - 50 + 8 );
-      monthText.setAttribute('font-size',8);
-      monthText.setAttribute('font-family','Signika');
-      monthText.setAttribute('fill', '#666');
+
       bugGroup.insertBefore(monthText, bugGroup.firstChild);
 
       let nextMonth = firstDayOfMonth.getMonth() + 1;
@@ -1018,28 +1061,29 @@ function drawBugDetail(el, bugData){
     let firstDayOfYear = new Date(startYear + i, 0, 1);
     firstDayOfYear.setHours(0,0,0);
 
-    var yearLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
     var pos = getPositionFromDate(firstDayOfYear,bugPeriod);
-    yearLine.setAttribute('x1',pos);
-    yearLine.setAttribute('y1', y - 60);
-    yearLine.setAttribute('x2', pos);
-    yearLine.setAttribute('y2', y + circleR);
-    yearLine.setAttribute('stroke', 'black');
-    yearLine.setAttribute('stroke-opacity', 0.1);
-    yearLine.setAttribute('stroke-width', .5);
+    var yearLine = createSVGElement("line",{
+      "x1": pos,
+      "y1": y - 60,
+      "x2": pos,
+      "y2": y + circleR,
+      "stroke": "black",
+      "stroke-opacity": 0.1,
+      "stroke-width": .5
+    });
     bugGroup.insertBefore(yearLine,bugGroup.firstChild);
-
-    var yearText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    yearText.textContent = startYear + i;
 
     if(pos < svg.viewBox.baseVal.x ){
       pos = svg.viewBox.baseVal.x;
     }
-    yearText.setAttribute('x', pos + 1);
-    yearText.setAttribute('y', y - 60 + 8 );
-    yearText.setAttribute('font-size',8);
-    yearText.setAttribute('font-family','Signika');
-    yearText.setAttribute('fill', '#666');
+    var yearText = createSVGElement("text", {
+      "x": pos + 1,
+      "y": y - 60 + 8 ,
+      "font-size": 8,
+      "font-family": "Signika",
+      "fill": "#666"
+    });
+    yearText.textContent = startYear + i;
     bugGroup.insertBefore(yearText, bugGroup.firstChild);
   };
 }
