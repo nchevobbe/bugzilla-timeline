@@ -81,6 +81,17 @@ function getEmail(){
   return null;
 }
 
+function needWhiteText(rgb){
+  let values = rgb.replace("rgb(","").replace(")","").replace(" ","").split(",");
+
+  var r = parseInt(values[0],10);
+  var g = parseInt(values[1],10);
+  var b = parseInt(values[2],10);
+  var yiq = ((r*299)+(g*587)+(b*114))/1000;
+  console.log("needWhiteText", values, "yiq", yiq);
+  return (yiq < 120);
+}
+
 function hideTooltip(){
   if(tooltipEl.innerHTML === ""){
     return;
@@ -91,6 +102,7 @@ function hideTooltip(){
     tooltipEl.style.top = `0`;
     tooltipEl.style.backgroundColor = "";
     tooltipEl.textContent = "";
+    tooltipEl.classList.remove("dark");
   },200);
   return tooltipHideId;
 }
@@ -164,6 +176,11 @@ function onMouseMove(e){
       }
       if(e.target.getAttribute('fill')){
         tooltipEl.style.backgroundColor = e.target.getAttribute('fill');
+      }
+      if(needWhiteText(tooltipEl.style.backgroundColor)){
+        tooltipEl.classList.add("dark");
+      } else {
+        tooltipEl.classList.remove("dark");
       }
     }
   } else {

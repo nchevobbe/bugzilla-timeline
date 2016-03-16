@@ -258,9 +258,17 @@ svg {
   width: 300px;
   min-width: width: 200px;
   background-color: #1976D2;
-  color: rgba(0,0,0,0.8);
+  color: black;
   text-align: center;
   word-wrap: break-word;
+}
+
+.tooltip.dark {
+  color: white;
+}
+
+.tooltip.dark hr {
+  border-color: white;
 }
 
 .removed {
