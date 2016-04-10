@@ -487,7 +487,7 @@ function getPositionFromDate(date, period){
 
 function findLane(start, end){
   var lane = 0;
-  var safe_space = 8;
+  var safe_space = 5;
   start = start - safe_space;
   end = end + safe_space;
   for(;lane < lanes.length;lane++){
