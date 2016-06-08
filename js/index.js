@@ -1,6 +1,7 @@
 "use strict";
 
 function init(){
+
   addListeners();
   let email = getEmail();
 
@@ -23,7 +24,7 @@ function onEmailChange(email){
     document.querySelector('.email').textContent = email;
     emailInput.value = email;
 
-    getUserBugs().then(function(data){
+    ApiHandler.getUserBugs(email).then(function(data){
       lanes = [];
       displayedYears = [];
       bugs = data.bugs;
@@ -345,52 +346,6 @@ function updateDashboardNavigation(year){
 
 }
 
-function getUserBugs(){
-  let fields = [
-    "id",
-    "summary",
-    "status",
-    "cf_last_resolved",
-    "target_milestone",
-    "creation_time",
-    "resolution",
-    "assigned_to",
-    "creator",
-    "priority"
-  ];
-  var params = {
-    "include_fields": fields.join(","),
-    "email1": bugzillaEmail,
-    "emailassigned_to1":1
-  };
-  if(window.URLSearchParams){
-    var searchParams = new URLSearchParams();
-
-    Object.keys(params).forEach(function(key){
-      searchParams.append(key, params[key]);
-    });
-    searchParams = searchParams.toString();
-  } else {
-    var searchParams = [];
-    Object.keys(params).forEach(function(key){
-      searchParams.push(key+"="+params[key]);
-    });
-    searchParams = searchParams.join('&');
-  }
-
-
-  let url = `${BUGZILLA_API_URL}bug?${searchParams}`;
-  let myHeaders = new Headers();
-  myHeaders.append('Accept', 'application/json');
-
-  return fetch(url, {
-    mode: 'cors',
-    method: 'GET',
-    headers: myHeaders
-  })
-  .then((response) => response.json());
-}
-
 function fetchBugsHistoryForYear(year){
   document.querySelector('nav').classList.add('loading');
   let firstMonday = getMondayOfFirstWeek(year);
@@ -401,6 +356,11 @@ function fetchBugsHistoryForYear(year){
     }
 
     if(!x.cf_last_resolved){
+      return true;
+    }
+
+    if(x.status === "REOPENED") {
+      x.cf_last_resolved = null;
       return true;
     }
 
@@ -429,15 +389,15 @@ function fetchBugsHistoryForYear(year){
       return priorityA < priorityB ? -1:1;
     }
 
-    // "a" and "b" are in the same state ( both resolved, or both unresolved)
+    // "a" and "b" are in the same state (both resolved, or both unresolved)
     // and have the same priority
-    // we want to get the older bugs first
+    // We want to get the older bugs first
     return a.creation_time < b.creation_time ? -1 : 1;
   });
 
   return yearBugs.reduce(function(previousBugPromise, bug, idx){
     return new Promise(function(resolve, reject){
-      var historyPromise = getBugHistory(bug).then(function(history){
+      var historyPromise = ApiHandler.getBugHistory(bug).then(function(history){
         bug.history = history;
 
         // A bug is being worked on by the user when :
@@ -498,34 +458,6 @@ function fetchBugsHistoryForYear(year){
   .catch((e) => console.error(e));
 }
 
-
-function getBugHistory(bugData){
-  let myHeaders = new Headers();
-  myHeaders.append('Accept', 'application/json');
-  var url = `${BUGZILLA_API_URL}bug/${bugData.id}/history`;
-  return fetch(url, {
-    mode: 'cors',
-    method: 'GET',
-    headers: myHeaders
-  })
-  .then((response) => response.json())
-  .then(function(data){
-    let history = data.bugs[0].history;
-    history.unshift({
-      who: bugData.creator,
-      when: bugData.creation_time,
-      changes: [{
-        field_name: 'Creation',
-        removed: '',
-        added: ''
-      }]
-    });
-    return history;
-  }).catch(function(ex){
-    console.log(bugData.id, ex);
-  });
-}
-
 function getMondayOfFirstWeek(year){
   // First week of the year is the week where is January 4th
   let currentYearJan4 = new Date(`${year}-01-04`);
@@ -560,7 +492,7 @@ function getPositionFromDate(date, period){
 
 function findLane(start, end){
   var lane = 0;
-  var safe_space = 8;
+  var safe_space = 5;
   start = start - safe_space;
   end = end + safe_space;
   for(;lane < lanes.length;lane++){
@@ -1150,7 +1082,7 @@ const MONDAY_INDEX = 1;
 const MILLISECOND_A_DAY = (1000*60*60*24);
 const BUGZILLA_BIRTH_YEAR = 1998;
 const MONTHS = ['January','February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const BUGZILLA_API_URL = 'https://bugzilla.mozilla.org/rest/';
+
 const COLORS = ["rgb(244, 67, 54)","rgb(0, 150, 136)","rgb(96, 125, 139)","rgb(156, 39, 176)","rgb(103, 58, 183)","rgb(63, 81, 181)","rgb(33, 150, 243)","rgb(3, 169, 244)","rgb(0, 188, 212)","rgb(76, 175, 80)","rgb(139, 195, 74)","rgb(255, 193, 7)","rgb(255, 152, 0)","rgb(255, 87, 34)","rgb(233, 30, 99)","rgb(121, 85, 72)"];
 const PRIORITY_REGEX = /^P[1-5]$/;
 var USERS_COLORS = COLORS.map((x) => x);
