@@ -359,6 +359,11 @@ function fetchBugsHistoryForYear(year){
       return true;
     }
 
+    if(x.status === "REOPENED") {
+      x.cf_last_resolved = null;
+      return true;
+    }
+
     return (new Date(x.cf_last_resolved) >= firstMonday);
   });
 
