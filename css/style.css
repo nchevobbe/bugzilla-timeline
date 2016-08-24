@@ -238,7 +238,7 @@ svg {
 .zoomed .bug-line:not(.detail){
   display: none;
 }
-.bug-line.detail .resolved {
+.bug-line.detail .terminator {
   display:none;
 }
 

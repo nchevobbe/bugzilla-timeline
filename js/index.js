@@ -89,7 +89,6 @@ function needWhiteText(rgb){
   var g = parseInt(values[1],10);
   var b = parseInt(values[2],10);
   var yiq = ((r*299)+(g*587)+(b*114))/1000;
-  console.log("needWhiteText", values, "yiq", yiq);
   return (yiq < 120);
 }
 
@@ -552,18 +551,8 @@ function drawBug(bug){
         ${bug.summary}`
     });
 
-    if(bug.cf_last_resolved && bug.resolution == 'FIXED'){
-      var endCircle = createSVGElement("circle", {
-        "class": "resolved",
-        "cx": endPoint,
-        "cy": y,
-        "r": endCircleR,
-        "fill": bugColor
-      });
-      bugGroup.appendChild(endCircle);
-    }
-
     var bugAssignedLine = createSVGElement("line",{
+      "class": "assignement-line",
       "x1": startPoint,
       "y1": y,
       "x2": endPoint,
@@ -572,6 +561,32 @@ function drawBug(bug){
       "stroke-width": strokeWidth,
       "stroke-linecap": "round"
     });
+
+    if(bug.cf_last_resolved){
+      if(bug.resolution == 'FIXED') {
+        var endCircle = createSVGElement("circle", {
+          "class": "terminator resolved",
+          "cx": endPoint,
+          "cy": y,
+          "r": endCircleR,
+          "fill": bugColor
+        });
+        bugGroup.appendChild(endCircle);
+      } else {
+
+        var lineHeight = strokeWidth * 0.9;
+        var endVerticalLine = createSVGElement("line", {
+          "class": "terminator closed",
+          "x1": endPoint + (strokeWidth / 4),
+          "y1": y - lineHeight,
+          "x2": endPoint + (strokeWidth / 4),
+          "y2": y + lineHeight,
+          "stroke": bugColor,
+        });
+        bugGroup.appendChild(endVerticalLine);
+      }
+    }
+
     bugGroup.appendChild(bugAssignedLine);
     svg.appendChild(bugGroup);
   }
@@ -655,7 +670,7 @@ function zoomInBug(el){
     });
     bugTitleEl.innerHTML =`<a href="https://bugzilla.mozilla.org/show_bug.cgi?id=${id}" target="blank">Bug ${id} - ${bugData.summary}</a>`;
 
-    var line = el.querySelector('line');
+    var line = el.querySelector('line.assignement-line');
 
     var duration = 500;
     var x1 = parseFloat(line.getAttribute("x1"));
@@ -717,15 +732,33 @@ function drawBugDetail(el, bugData){
     "class": "detail-bug-line"
   });
 
-  if(bugData.endDate && bugData.resolution == 'FIXED'){
-    let endCircle = createSVGElement("circle", {
-      "cx": getPositionFromDate(bugData.endDate,bugPeriod),
-      "cy": y,
-      "r": 9,
-      "fill": "rgba(0,0,0,0.3)",
-      "data-tooltip":`RESOLVED ${bugData.cf_last_resolved}`
-    });
-    bugGroup.appendChild(endCircle);
+  let terminator;
+  let terminatorPosition = getPositionFromDate(bugData.endDate,bugPeriod);
+  if(bugData.endDate){
+    if(bugData.resolution == 'FIXED') {
+      terminator = createSVGElement("circle", {
+        "cx": terminatorPosition,
+        "cy": y,
+        "r": 9,
+        "fill": "rgba(0,0,0,0.3)",
+        "data-tooltip":`RESOLVED ${bugData.cf_last_resolved}`
+      });
+    } else {
+      terminator = createSVGElement("line", {
+        "class": "NNNN",
+        "x1": terminatorPosition,
+        "x2": terminatorPosition,
+        "y1": y - 9,
+        "y2": y + 9,
+        "stroke": "rgba(0,0,0,0.3)",
+        "stroke-width": 2,
+        "data-tooltip":`CLOSED ${bugData.cf_last_resolved}`
+      });
+    }
+  }
+
+  if(terminator) {
+    bugGroup.appendChild(terminator);
   }
 
   let bugLine = createSVGElement("line", {
@@ -1029,7 +1062,7 @@ function zoomOut(){
       detail.remove();
     }
 
-    var line = zoomedEl.querySelector('line');
+    var line = zoomedEl.querySelector('line.assignement-line');
     var duration = 500;
     var x1 = parseFloat(line.getAttribute("x1"));
     var x2 = parseFloat(line.getAttribute("x2"));
