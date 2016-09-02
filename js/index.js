@@ -19,7 +19,7 @@ function onEmailChange(email){
     if(isZoomed()){
       zoomOut();
     }
-    svg.innerHTML = "";
+    svg.innerHTML = svg.querySelector("defs").outerHTML;
     bugzillaEmail = email;
     document.querySelector('.email').textContent = email;
     emailInput.value = email;
@@ -145,7 +145,7 @@ function onMouseMove(e){
       e.target.parentNode.getAttribute('data-tooltip')
     )
   ){
-    let newTarget = e.target.getAttribute('data-tooltip')?e.target:e.target.parentNode;
+    let newTarget = e.target.closest('[data-tooltip]');
 
     if(currentTooltipTarget === null || currentTooltipTarget != newTarget){
       if(tooltipHideId){
@@ -155,7 +155,7 @@ function onMouseMove(e){
 
       currentTooltipTarget = newTarget;
 
-      tooltipEl.innerHTML = e.target.getAttribute('data-tooltip') || e.target.parentNode.getAttribute('data-tooltip');
+      tooltipEl.innerHTML = currentTooltipTarget.getAttribute('data-tooltip');
 
       let left = e.clientX - (tooltipEl.clientWidth / 2);
       let top = e.clientY + (DETAIL_PADDING * (isZoomed()?3:1));
@@ -171,12 +171,12 @@ function onMouseMove(e){
 
       tooltipEl.style.left = `${left}px`;
       tooltipEl.style.top = `${top}px`;
-      if(e.target.getAttribute('stroke')){
-        tooltipEl.style.backgroundColor = e.target.getAttribute('stroke');
+
+      if(currentTooltipTarget.getAttribute('fill') || currentTooltipTarget.getAttribute('stroke')) {
+        tooltipEl.style.backgroundColor = currentTooltipTarget.getAttribute('fill') || currentTooltipTarget.getAttribute('stroke');
+
       }
-      if(e.target.getAttribute('fill')){
-        tooltipEl.style.backgroundColor = e.target.getAttribute('fill');
-      }
+
       if(needWhiteText(tooltipEl.style.backgroundColor)){
         tooltipEl.classList.add("dark");
       } else {
@@ -508,10 +508,13 @@ function findLane(start, end){
   return lane;
 }
 
-function createSVGElement(tagName, attributes){
+function createSVGElement(tagName, attributes, content){
   let el = document.createElementNS("http://www.w3.org/2000/svg", tagName);
   for(let key in attributes){
     el.setAttribute(key, attributes[key])
+  }
+  if(content) {
+    el.innerHTML = content;
   }
   return el;
 }
@@ -541,14 +544,27 @@ function drawBug(bug){
     }
     lanes[laneNumber].push([startPoint,endPoint]);
     var y = (LINE_HEIGHT * 1.5) + (laneNumber * LINE_HEIGHT);
+    var title = `Bug ${bug.id}`;
+    if(PRIORITY_REGEX.test(bug.priority)) {
+      title += " [" + bug.priority + "]";
+    }
+
+    var body = bug.summary;
+    if(bug.flags.some(({name}) => name === "needinfo")) {
+      var needinfo = bug.flags
+        .filter(({name}) => name === "needinfo")
+        .map(({requestee}) => requestee);
+
+      body += "<br>Need info from : " + needinfo.join(" - ");
+    }
     var bugGroup = createSVGElement("g", {
       "class": "bug-line",
       "data-bug-id": bug.id,
+      "fill": bugColor,
       "data-tooltip": `
-        Bug ${bug.id}
-        ${PRIORITY_REGEX.test(bug.priority)?" [" + bug.priority + "]":""}
+        ${title}
         <hr>
-        ${bug.summary}`
+        ${body}`
     });
 
     var bugAssignedLine = createSVGElement("line",{
@@ -561,7 +577,7 @@ function drawBug(bug){
       "stroke-width": strokeWidth,
       "stroke-linecap": "round"
     });
-
+    bugGroup.appendChild(bugAssignedLine);
     if(bug.cf_last_resolved){
       if(bug.resolution == 'FIXED') {
         var endCircle = createSVGElement("circle", {
@@ -585,9 +601,42 @@ function drawBug(bug){
         });
         bugGroup.appendChild(endVerticalLine);
       }
-    }
+    } else {
+      let needInfoFlags = bug.flags.filter(flag => flag.name === "needinfo");
+      if(needInfoFlags.length > 0) {
 
-    bugGroup.appendChild(bugAssignedLine);
+        var olderFlag = needInfoFlags.reduce((previous, current) => {
+          if(previous === null || current.creation_date < previous.creation_date) {
+            return current;
+          }
+          return previous;
+        }, null);
+        var flagStartPoint = getPositionFromDate(new Date(olderFlag.creation_date));
+        if(flagStartPoint > endPoint - strokeWidth) {
+          flagStartPoint = endPoint - strokeWidth
+        }
+        var lineHeight = strokeWidth * 0.9;
+        var endRect = createSVGElement("rect", {
+          "class": "terminator needinfo",
+          "x": flagStartPoint,
+          "y": y - strokeWidth,
+          "width": endPoint - flagStartPoint + (strokeWidth / 2),
+          "height": strokeWidth * 2,
+          "fill": bugColor,
+        });
+        var endRectStriped = createSVGElement("rect", {
+          "class": "terminator needinfo",
+          "x": flagStartPoint,
+          "y": y - strokeWidth,
+          "width": endPoint - flagStartPoint + (strokeWidth / 2),
+          "height": strokeWidth * 2,
+          "fill": "url(#pattern-stripe)",
+        });
+
+        bugGroup.appendChild(endRect);
+        bugGroup.appendChild(endRectStriped);
+      }
+    }
     svg.appendChild(bugGroup);
   }
 }
@@ -734,7 +783,7 @@ function drawBugDetail(el, bugData){
 
   let terminator;
   let terminatorPosition = getPositionFromDate(bugData.endDate,bugPeriod);
-  if(bugData.endDate){
+  if(bugData.cf_last_resolved){
     if(bugData.resolution == 'FIXED') {
       terminator = createSVGElement("circle", {
         "cx": terminatorPosition,
@@ -745,7 +794,7 @@ function drawBugDetail(el, bugData){
       });
     } else {
       terminator = createSVGElement("line", {
-        "class": "NNNN",
+        "class": "terminator",
         "x1": terminatorPosition,
         "x2": terminatorPosition,
         "y1": y - 9,

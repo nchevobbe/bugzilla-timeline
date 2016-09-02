@@ -14,7 +14,8 @@ let ApiHandler = {
       "resolution",
       "assigned_to",
       "creator",
-      "priority"
+      "priority",
+      "flags",
     ];
     let params = {
       "include_fields": fields.join(","),
