@@ -1,5 +1,23 @@
 "use strict";
 
+require('../css/reset.css');
+require('../css/style.css');
+
+const {
+  LS_KEY_EMAIL,
+  X_PADDING,
+  LINE_HEIGHT,
+  DETAIL_PADDING,
+  MONDAY_INDEX,
+  MILLISECOND_A_DAY,
+  BUGZILLA_BIRTH_YEAR,
+  MONTHS,
+  COLORS,
+  PRIORITY_REGEX
+} = require("./constants");
+const {ApiHandler} = require("./ApiHandler");
+const {needWhiteText, getMondayOfFirstWeek, findLane, createSVGElement} = require("./utils");
+
 function init(){
 
   addListeners();
@@ -80,16 +98,6 @@ function getEmail(){
   }
 
   return null;
-}
-
-function needWhiteText(rgb){
-  let values = rgb.replace("rgb(","").replace(")","").replace(" ","").split(",");
-
-  var r = parseInt(values[0],10);
-  var g = parseInt(values[1],10);
-  var b = parseInt(values[2],10);
-  var yiq = ((r*299)+(g*587)+(b*114))/1000;
-  return (yiq < 120);
 }
 
 function hideTooltip(){
@@ -457,11 +465,6 @@ function fetchBugsHistoryForYear(year){
   .catch((e) => console.error(e));
 }
 
-function getMondayOfFirstWeek(year){
-  // First week of the year is the week where is January 4th
-  let currentYearJan4 = new Date(`${year}-01-04`);
-  return new Date(currentYearJan4.getTime() - ((currentYearJan4.getDay() - MONDAY_INDEX) * MILLISECOND_A_DAY));
-}
 
 function getPositionFromDate(date, period){
     if(period){
@@ -489,36 +492,6 @@ function getPositionFromDate(date, period){
     return (date - getMondayOfFirstWeek(BUGZILLA_BIRTH_YEAR))/MILLISECOND_A_DAY;
 }
 
-function findLane(start, end){
-  var lane = 0;
-  var safe_space = 5;
-  start = start - safe_space;
-  end = end + safe_space;
-  for(;lane < lanes.length;lane++){
-    var fit = lanes[lane].every(function(xs){
-      return !(
-        ( xs[0] >= start && xs[0] <= end ) ||
-        ( start >= xs[0] && start <= xs[1] )
-      );
-    });
-    if(fit === true){
-      break;
-    }
-  }
-  return lane;
-}
-
-function createSVGElement(tagName, attributes, content){
-  let el = document.createElementNS("http://www.w3.org/2000/svg", tagName);
-  for(let key in attributes){
-    el.setAttribute(key, attributes[key])
-  }
-  if(content) {
-    el.innerHTML = content;
-  }
-  return el;
-}
-
 function drawBug(bug){
   if(bug.startDate){
     var strokeWidth = 2;
@@ -537,7 +510,7 @@ function drawBug(bug){
 
     var startPoint = getPositionFromDate(bug.startDate);
     var endPoint = getPositionFromDate(bug.endDate);
-    var laneNumber = findLane(startPoint,endPoint);
+    var laneNumber = findLane(lanes, startPoint, endPoint);
 
     if(!lanes[laneNumber]){
       lanes[laneNumber] = [];
@@ -1157,17 +1130,7 @@ function zoomOut(){
   }
 }
 
-const LS_KEY_EMAIL = 'bugzilla-email';
-const X_PADDING = 0;
-const LINE_HEIGHT = 7.5;
-const DETAIL_PADDING = 15;
-const MONDAY_INDEX = 1;
-const MILLISECOND_A_DAY = (1000*60*60*24);
-const BUGZILLA_BIRTH_YEAR = 1998;
-const MONTHS = ['January','February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const COLORS = ["rgb(244, 67, 54)","rgb(0, 150, 136)","rgb(96, 125, 139)","rgb(156, 39, 176)","rgb(103, 58, 183)","rgb(63, 81, 181)","rgb(33, 150, 243)","rgb(3, 169, 244)","rgb(0, 188, 212)","rgb(76, 175, 80)","rgb(139, 195, 74)","rgb(255, 193, 7)","rgb(255, 152, 0)","rgb(255, 87, 34)","rgb(233, 30, 99)","rgb(121, 85, 72)"];
-const PRIORITY_REGEX = /^P[1-5]$/;
 var USERS_COLORS = COLORS.map((x) => x);
 
 var lanes = [];

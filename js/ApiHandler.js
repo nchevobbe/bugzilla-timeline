@@ -19,7 +19,7 @@ let ApiHandler = {
     ];
     let params = {
       "include_fields": fields.join(","),
-      "email1": bugzillaEmail,
+      "email1": email,
       "emailassigned_to1":1
     };
     if(window.URLSearchParams){
@@ -74,3 +74,5 @@ let ApiHandler = {
     });
   }
 };
+
+module.exports.ApiHandler = ApiHandler;
