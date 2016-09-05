@@ -598,6 +598,7 @@ function drawBug(bug){
           "x2": endPoint + (strokeWidth / 4),
           "y2": y + lineHeight,
           "stroke": bugColor,
+          "stroke-width": strokeWidth / 2,
         });
         bugGroup.appendChild(endVerticalLine);
       }
