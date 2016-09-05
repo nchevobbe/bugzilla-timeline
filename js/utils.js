@@ -1,48 +1,59 @@
-"use strict";
-
 const {MONDAY_INDEX, MILLISECOND_A_DAY} = require("./constants");
 
-function needWhiteText(rgb){
-  let values = rgb.replace("rgb(","").replace(")","").replace(" ","").split(",");
+function needWhiteText(rgb) {
+  let values = rgb.replace("rgb(", "").replace(")", "").replace(" ", "").split(",");
+  let [r, g, b] = values.map(value => parseInt(value, 10));
 
-  var r = parseInt(values[0],10);
-  var g = parseInt(values[1],10);
-  var b = parseInt(values[2],10);
-  var yiq = ((r*299)+(g*587)+(b*114))/1000;
+  let yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
   return (yiq < 120);
 }
 
-function getMondayOfFirstWeek(year){
+function getMondayOfFirstWeek(year) {
   // First week of the year is the week where is January 4th
   let currentYearJan4 = new Date(`${year}-01-04`);
-  return new Date(currentYearJan4.getTime() - ((currentYearJan4.getDay() - MONDAY_INDEX) * MILLISECOND_A_DAY));
+  return new Date(
+    currentYearJan4.getTime() -
+    ((currentYearJan4.getDay() - MONDAY_INDEX) * MILLISECOND_A_DAY)
+  );
 }
 
-function findLane(lanes, start, end){
-  var lane = 0;
-  var safe_space = 5;
-  start = start - safe_space;
-  end = end + safe_space;
-  for(;lane < lanes.length;lane++){
-    var fit = lanes[lane].every(function(xs){
-      return !(
-        ( xs[0] >= start && xs[0] <= end ) ||
-        ( start >= xs[0] && start <= xs[1] )
-      );
+function findLane(lanes, unpositionnedBugStart, unpositionnedBugEnd) {
+  if (lanes.length === 0) {
+    return 0;
+  }
+
+  let safeSpace = 5;
+  unpositionnedBugStart = unpositionnedBugStart - safeSpace;
+  unpositionnedBugEnd = unpositionnedBugEnd + safeSpace;
+
+  let laneNumber = 0;
+  let laneFound = lanes.some(function (lane, index) {
+    laneNumber = index;
+    // In order to fit in a lane, the bug must not overlap any
+    // bug in the lane.
+    // A bug a does not overlap a bug b if:
+    // - "a" ends before "b" starts
+    // - "a" starts after "b" ends
+    let fit = lane.every(function ([bugStart, bugEnd]) {
+      return (unpositionnedBugEnd < bugStart || unpositionnedBugStart > bugEnd);
     });
-    if(fit === true){
-      break;
-    }
+    // if the bug fits the lane, we can exit the loop
+    return fit;
+  });
+
+  if (laneFound) {
+    return laneNumber;
   }
-  return lane;
+
+  return ++laneNumber;
 }
 
-function createSVGElement(tagName, attributes, content){
+function createSVGElement(tagName, attributes, content) {
   let el = document.createElementNS("http://www.w3.org/2000/svg", tagName);
-  for(let key in attributes){
-    el.setAttribute(key, attributes[key])
+  for (let key in attributes) {
+    el.setAttribute(key, attributes[key]);
   }
-  if(content) {
+  if (content) {
     el.innerHTML = content;
   }
   return el;

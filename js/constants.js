@@ -1,26 +1,24 @@
-"use strict";
-
 const constants = {
-  LS_KEY_EMAIL: 'bugzilla-email',
+  LS_KEY_EMAIL: "bugzilla-email",
   X_PADDING: 0,
   LINE_HEIGHT: 7.5,
   DETAIL_PADDING: 15,
   MONDAY_INDEX: 1,
-  MILLISECOND_A_DAY: (1000*60*60*24),
+  MILLISECOND_A_DAY: (1000 * 60 * 60 * 24),
   BUGZILLA_BIRTH_YEAR: 1998,
   MONTHS: [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December'
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December"
   ],
   COLORS: [
     "rgb(244, 67, 54)",
