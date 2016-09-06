@@ -25,6 +25,6 @@
     "eslint": "^3.4.0",
     "eslint-loader": "^1.5.0",
     "style-loader": "^0.13.1",
-    "svg-inline-loader": "^0.6.1"
+    "svg-url-loader": "^1.1.0"
   }
 }

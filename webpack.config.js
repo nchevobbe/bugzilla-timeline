@@ -1,4 +1,4 @@
-var webpack = require('webpack');
+var webpack = require("webpack");
 
 module.exports = {
   context: __dirname,
@@ -8,18 +8,18 @@ module.exports = {
     path: __dirname + "/dist",
     filename: "bundle.js"
   },
-  module:{
+  module: {
     preLoaders: [
         // Javascript
-        { test: /\.js?$/, loader: 'eslint', exclude: /node_modules/ }
+        { test: /\.js?$/, loader: "eslint", exclude: /node_modules/ }
     ],
     loaders: [
-      {test : /\.css$/, loader: 'style!css!'},
-      { test: /\.svg$/, loader: 'svg-inline' }
+      {test: /\.css$/, loader: "style!css!"},
+      {test: /\.svg/, loader: "svg-url-loader"}
     ]
   },
   eslint: {
-      failOnWarning: false,
-      failOnError: true
+    failOnWarning: false,
+    failOnError: true
   },
-}
+};
