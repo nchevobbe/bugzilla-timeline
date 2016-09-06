@@ -1,0 +1,30 @@
+{
+  "name": "bugzilla-timeline",
+  "version": "1.0.0",
+  "description": "Shows assigned bugzilla's bug for a given user",
+  "main": "js/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nchevobbe/bugzilla-timeline.git"
+  },
+  "author": "Nicolas Chevobbe",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/nchevobbe/bugzilla-timeline/issues"
+  },
+  "homepage": "https://github.com/nchevobbe/bugzilla-timeline#readme",
+  "dependencies": {
+    "webpack": "^1.13.2"
+  },
+  "devDependencies": {
+    "babel-eslint": "^6.1.2",
+    "css-loader": "^0.25.0",
+    "eslint": "^3.4.0",
+    "eslint-loader": "^1.5.0",
+    "style-loader": "^0.13.1",
+    "svg-url-loader": "^1.1.0"
+  }
+}
