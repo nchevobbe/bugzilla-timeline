@@ -460,10 +460,10 @@
 	          bug.history = history;
 	
 	          // A bug is being worked on by the user when :
-	          // - creates the bug
-	          // - changes the bug
-	          // - is cc"ed on the bug
-	          // - is assigned on the bug
+	          // - he creates the bug
+	          // - OR when he made a change on the bug
+	          // - OR when is cc'ed on the bug
+	          // - OR when is assigned on the bug
 	          bug.history.some(function (activity) {
 	            var hasAssignement = (activity.who === bugzillaEmail);
 	            if (!hasAssignement) {
@@ -482,6 +482,7 @@
 	            return hasAssignement;
 	          });
 	
+	          // If the bug has no startDate, we assume it is the creation date
 	          if (!bug.startDate && bug.assigned_to === bugzillaEmail) {
 	            bug.startDate = new Date(bug.creation_time);
 	          }
@@ -491,6 +492,17 @@
 	          } else {
 	            bug.endDate = new Date();
 	          }
+	
+	          // If the startDate is greater than the endDate, change it to the creation date
+	          if (bug.startDate > bug.endDate) {
+	            bug.startDate = new Date(bug.creation_time);
+	          }
+	
+	          // Strip every history entry that is not in the (startDate,endDate) period
+	          bug.history = bug.history.filter(activity => {
+	            let when = new Date(activity.when);
+	            return when >= bug.startDate && when <= bug.endDate;
+	          });
 	
 	          return Promise.resolve(bug);
 	        });
@@ -536,128 +548,126 @@
 	}
 	
 	function drawBug(bug) {
-	  if (bug.startDate) {
-	    var strokeWidth = 2;
-	    var endCircleR = 1.75;
-	    var minMultiplier = 0.25;
-	    var maxMultiplier = 1.75;
+	  var strokeWidth = 2;
+	  var endCircleR = 1.75;
+	  var minMultiplier = 0.25;
+	  var maxMultiplier = 1.75;
 	
-	    if (PRIORITY_REGEX.test(bug.priority)) {
-	      var priorityRatio = (
-	        minMultiplier + (
-	          (((-1.25 / 5) * bug.priority[1]) + 1.25) * (maxMultiplier - minMultiplier)
-	        )
-	      );
-	      strokeWidth = strokeWidth * priorityRatio;
-	      endCircleR = endCircleR * priorityRatio;
-	    }
-	
-	    var colorIndex = (bug.id % (COLORS.length - 1));
-	    var bugColor = COLORS[colorIndex];
-	
-	    var startPoint = getPositionFromDate(bug.startDate);
-	    var endPoint = getPositionFromDate(bug.endDate);
-	    var laneNumber = findLane(lanes, startPoint, endPoint);
-	
-	    if (!lanes[laneNumber]) {
-	      lanes[laneNumber] = [];
-	    }
-	    lanes[laneNumber].push([startPoint, endPoint]);
-	    var y = (LINE_HEIGHT * 1.5) + (laneNumber * LINE_HEIGHT);
-	    var title = `Bug ${bug.id}`;
-	    if (PRIORITY_REGEX.test(bug.priority)) {
-	      title += " [" + bug.priority + "]";
-	    }
-	
-	    var body = bug.summary;
-	    if (bug.flags.some(({name}) => name === "needinfo")) {
-	      var needinfo = bug.flags
-	        .filter(({name}) => name === "needinfo")
-	        .map(({requestee}) => requestee);
-	
-	      body += "<br>Need info from : " + needinfo.join(" - ");
-	    }
-	    var bugGroup = createSVGElement("g", {
-	      "class": "bug-line",
-	      "data-bug-id": bug.id,
-	      "fill": bugColor,
-	      "data-tooltip": `
-	        ${title}
-	        <hr>
-	        ${body}`
-	    });
-	
-	    var bugAssignedLine = createSVGElement("line", {
-	      "class": "assignement-line",
-	      "x1": startPoint,
-	      "y1": y,
-	      "x2": endPoint,
-	      "y2": y,
-	      "stroke": bugColor,
-	      "stroke-width": strokeWidth,
-	      "stroke-linecap": "round"
-	    });
-	    bugGroup.appendChild(bugAssignedLine);
-	    if (bug.cf_last_resolved) {
-	      if (bug.resolution == "FIXED") {
-	        var endCircle = createSVGElement("circle", {
-	          "class": "terminator resolved",
-	          "cx": endPoint,
-	          "cy": y,
-	          "r": endCircleR,
-	          "fill": bugColor
-	        });
-	        bugGroup.appendChild(endCircle);
-	      } else {
-	        var lineHeight = strokeWidth * 0.9;
-	        var endVerticalLine = createSVGElement("line", {
-	          "class": "terminator closed",
-	          "x1": endPoint + (strokeWidth / 4),
-	          "y1": y - lineHeight,
-	          "x2": endPoint + (strokeWidth / 4),
-	          "y2": y + lineHeight,
-	          "stroke": bugColor,
-	          "stroke-width": strokeWidth / 2,
-	        });
-	        bugGroup.appendChild(endVerticalLine);
-	      }
-	    } else {
-	      let needInfoFlags = bug.flags.filter(flag => flag.name === "needinfo");
-	      if (needInfoFlags.length > 0) {
-	        var olderFlag = needInfoFlags.reduce((previous, current) => {
-	          if (previous === null || current.creation_date < previous.creation_date) {
-	            return current;
-	          }
-	          return previous;
-	        }, null);
-	        var flagStartPoint = getPositionFromDate(new Date(olderFlag.creation_date));
-	        if (flagStartPoint > endPoint - strokeWidth) {
-	          flagStartPoint = endPoint - strokeWidth;
-	        }
-	
-	        var endRect = createSVGElement("rect", {
-	          "class": "terminator needinfo",
-	          "x": flagStartPoint,
-	          "y": y - strokeWidth,
-	          "width": endPoint - flagStartPoint + (strokeWidth / 2),
-	          "height": strokeWidth * 2,
-	          "fill": bugColor,
-	        });
-	        var endRectStriped = createSVGElement("rect", {
-	          "class": "terminator needinfo",
-	          "x": flagStartPoint,
-	          "y": y - strokeWidth,
-	          "width": endPoint - flagStartPoint + (strokeWidth / 2),
-	          "height": strokeWidth * 2,
-	          "fill": "url(#pattern-stripe)",
-	        });
-	
-	        bugGroup.appendChild(endRect);
-	        bugGroup.appendChild(endRectStriped);
-	      }
-	    }
-	    svg.appendChild(bugGroup);
+	  if (PRIORITY_REGEX.test(bug.priority)) {
+	    var priorityRatio = (
+	      minMultiplier + (
+	        (((-1.25 / 5) * bug.priority[1]) + 1.25) * (maxMultiplier - minMultiplier)
+	      )
+	    );
+	    strokeWidth = strokeWidth * priorityRatio;
+	    endCircleR = endCircleR * priorityRatio;
 	  }
+	
+	  var colorIndex = (bug.id % (COLORS.length - 1));
+	  var bugColor = COLORS[colorIndex];
+	
+	  var startPoint = getPositionFromDate(bug.startDate);
+	  var endPoint = getPositionFromDate(bug.endDate);
+	  var laneNumber = findLane(lanes, startPoint, endPoint);
+	
+	  if (!lanes[laneNumber]) {
+	    lanes[laneNumber] = [];
+	  }
+	  lanes[laneNumber].push([startPoint, endPoint]);
+	  var y = (LINE_HEIGHT * 1.5) + (laneNumber * LINE_HEIGHT);
+	  var title = `Bug ${bug.id}`;
+	  if (PRIORITY_REGEX.test(bug.priority)) {
+	    title += " [" + bug.priority + "]";
+	  }
+	
+	  var body = bug.summary;
+	  if (bug.flags.some(({name}) => name === "needinfo")) {
+	    var needinfo = bug.flags
+	      .filter(({name}) => name === "needinfo")
+	      .map(({requestee}) => requestee);
+	
+	    body += "<br>Need info from : " + needinfo.join(" - ");
+	  }
+	  var bugGroup = createSVGElement("g", {
+	    "class": "bug-line",
+	    "data-bug-id": bug.id,
+	    "fill": bugColor,
+	    "data-tooltip": `
+	      ${title}
+	      <hr>
+	      ${body}`
+	  });
+	
+	  var bugAssignedLine = createSVGElement("line", {
+	    "class": "assignement-line",
+	    "x1": startPoint,
+	    "y1": y,
+	    "x2": endPoint,
+	    "y2": y,
+	    "stroke": bugColor,
+	    "stroke-width": strokeWidth,
+	    "stroke-linecap": "round"
+	  });
+	  bugGroup.appendChild(bugAssignedLine);
+	  if (bug.cf_last_resolved) {
+	    if (bug.resolution == "FIXED") {
+	      var endCircle = createSVGElement("circle", {
+	        "class": "terminator resolved",
+	        "cx": endPoint,
+	        "cy": y,
+	        "r": endCircleR,
+	        "fill": bugColor
+	      });
+	      bugGroup.appendChild(endCircle);
+	    } else {
+	      var lineHeight = strokeWidth * 0.9;
+	      var endVerticalLine = createSVGElement("line", {
+	        "class": "terminator closed",
+	        "x1": endPoint + (strokeWidth / 4),
+	        "y1": y - lineHeight,
+	        "x2": endPoint + (strokeWidth / 4),
+	        "y2": y + lineHeight,
+	        "stroke": bugColor,
+	        "stroke-width": strokeWidth / 2,
+	      });
+	      bugGroup.appendChild(endVerticalLine);
+	    }
+	  } else {
+	    let needInfoFlags = bug.flags.filter(flag => flag.name === "needinfo");
+	    if (needInfoFlags.length > 0) {
+	      var olderFlag = needInfoFlags.reduce((previous, current) => {
+	        if (previous === null || current.creation_date < previous.creation_date) {
+	          return current;
+	        }
+	        return previous;
+	      }, null);
+	      var flagStartPoint = getPositionFromDate(new Date(olderFlag.creation_date));
+	      if (flagStartPoint > endPoint - strokeWidth) {
+	        flagStartPoint = endPoint - strokeWidth;
+	      }
+	
+	      var endRect = createSVGElement("rect", {
+	        "class": "terminator needinfo",
+	        "x": flagStartPoint,
+	        "y": y - strokeWidth,
+	        "width": endPoint - flagStartPoint + (strokeWidth / 2),
+	        "height": strokeWidth * 2,
+	        "fill": bugColor,
+	      });
+	      var endRectStriped = createSVGElement("rect", {
+	        "class": "terminator needinfo",
+	        "x": flagStartPoint,
+	        "y": y - strokeWidth,
+	        "width": endPoint - flagStartPoint + (strokeWidth / 2),
+	        "height": strokeWidth * 2,
+	        "fill": "url(#pattern-stripe)",
+	      });
+	
+	      bugGroup.appendChild(endRect);
+	      bugGroup.appendChild(endRectStriped);
+	    }
+	  }
+	  svg.appendChild(bugGroup);
 	}
 	
 	function drawWeeks(year) {
