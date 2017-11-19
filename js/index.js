@@ -1,6 +1,3 @@
-require("../css/reset.css");
-require("../css/style.css");
-
 const {
   LS_KEY_EMAIL,
   LINE_HEIGHT,
@@ -409,16 +406,16 @@ function fetchBugsHistoryForYear(year) {
 
   return yearBugs.reduce(function (previousBugPromise, bug, idx) {
     return new Promise(function (resolve, reject) {
-      var historyPromise = ApiHandler.getBugHistory(bug)
-        .then(function (history) {
+      previousBugPromise.then(() => {
+        ApiHandler.getBugHistory(bug).then(function (history) {
           bug.history = history;
 
-          // A bug is being worked on by the user when :
-          // - he creates the bug
+          // A bug is being worked on by the user when they:
+          // - assigned on the bug
           // - OR when he made a change on the bug
           // - OR when is cc'ed on the bug
-          // - OR when is assigned on the bug
-          bug.history.some(function (activity) {
+          // - OR created the bug
+          [...bug.history].reverse().some(function (activity) {
             var hasAssignement = (activity.who === bugzillaEmail);
             if (!hasAssignement) {
               hasAssignement = activity.changes.some(change => (
@@ -458,26 +455,17 @@ function fetchBugsHistoryForYear(year) {
             return when >= bug.startDate && when <= bug.endDate;
           });
 
-          return Promise.resolve(bug);
+          drawBug(bug);
+          bug.displayed = true;
+          resolve(bug);
         });
-
-      var promises = [historyPromise, previousBugPromise];
-      Promise.all(promises).then(function (data) {
-        let readyBug = data[promises.indexOf(historyPromise)];
-        let i = bugs.findIndex((item) => item.id === readyBug.id);
-        if (i != -1) {
-          bugs[i] = readyBug;
-        }
-        drawBug(readyBug);
-        readyBug.displayed = true;
-        resolve();
       });
     });
   }, Promise.resolve())
+  .catch((e) => console.error(e))
   .then(function () {
     document.querySelector("nav").classList.remove("loading");
-  })
-  .catch((e) => console.error(e));
+  });
 }
 
 function getPositionFromDate(date, period) {

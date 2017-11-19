@@ -9,17 +9,9 @@ module.exports = {
     filename: "bundle.js"
   },
   module: {
-    preLoaders: [
-        // Javascript
-        { test: /\.js?$/, loader: "eslint", exclude: /node_modules/ }
-    ],
     loaders: [
       {test: /\.css$/, loader: "style!css!"},
       {test: /\.svg/, loader: "svg-url-loader"}
     ]
-  },
-  eslint: {
-    failOnWarning: false,
-    failOnError: true
   },
 };
